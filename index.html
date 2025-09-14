@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Leaflet + ArcGIS GeoJSON (GitHub Pages)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .popup-table { border-collapse: collapse; width: 260px; font-size: 12px; }
+    .popup-table td { border-top: 1px solid #ddd; padding: 2px 4px; vertical-align: top; }
+    .popup-table td:first-child { font-weight: 600; width: 40%; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+const map = L.map('map').setView([53.53, -113.30], 12); // start near Edmonton; we’ll fit to data
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+// --- Helpers ---------------------------------------------------------------
+function propsTable(props) {
+  const rows = Object.entries(props || {})
+    .filter(([k,v]) => v !== null && v !== '' && k !== 'OBJECTID')
+    .slice(0, 20) // keep popups readable
+    .map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  return `<table class="popup-table">${rows}</table>`;
+}
+
+// ArcGIS FeatureServer pagination for GeoJSON (handles maxRecordCount)
+async function fetchAllArcGISGeoJSON(baseUrl, chunk = 2000) {
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  let offset = 0, all = [];
+  while (true) {
+    const url = `${baseUrl}${sep}resultOffset=${offset}&resultRecordCount=${chunk}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    const gj = await res.json();
+    const feats = gj.features || [];
+    all = all.concat(feats);
+    if (feats.length < chunk) break;
+    offset += feats.length;
+  }
+  return { type: 'FeatureCollection', features: all };
+}
+
+// Generic loader -> returns a Leaflet layer (GeoJSON or cluster-ready)
+async function loadGeoJSONLayer({url, name, pointToLayer, style}) {
+  const gj = await fetchAllArcGISGeoJSON(url);
+  const layer = L.geoJSON(gj, {
+    pointToLayer,
+    style,
+    onEachFeature: (f, lyr) => lyr.bindPopup(propsTable(f.properties || {}))
+  });
+  return { name, layer };
+}
+
+// --- Your four layers ------------------------------------------------------
+const layersToLoad = [
+  {
+    name: 'Buildings with WiFi',
+    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+    pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+      radius: 6, weight: 1, color: '#016797', fillOpacity: 0.7
+    })
+  },
+  {
+    name: 'Playgrounds',
+    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Playgrounds/FeatureServer/3/query?outFields=*&where=1%3D1&f=geojson',
+    pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+      radius: 5, weight: 1, color: '#0099cb', fillOpacity: 0.6
+    })
+  },
+  {
+    name: 'Building Footprints',
+    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+    style: f => ({ weight: 0.8, color: '#444', fillColor: '#bbb', fillOpacity: 0.4 })
+  },
+  {
+    name: 'Land Use',
+    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+    // color by a plausible categorical field if present (e.g., ZONE / DISTRICT / LAND_USE)
+    style: f => {
+      const p = (f.properties || {});
+      const key = (p.ZONE || p.DISTRICT || p.LAND_USE || 'default') + '';
+      // cheap hash to pick one of fixed hues
+      const hues = [0, 30, 60, 120, 180, 210, 240, 270, 300];
+      const h = hues[Math.abs(key.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % hues.length];
+      return { weight: 0.6, color: `hsl(${h},35%,35%)`, fillColor: `hsl(${h},70%,70%)`, fillOpacity: 0.35 };
+    }
+  }
+];
+
+// Load all, add to map + layer control, then fit bounds
+(async () => {
+  const overlayLayers = {};
+  const group = L.featureGroup().addTo(map);
+
+  for (const spec of layersToLoad) {
+    try {
+      const {name, layer} = await loadGeoJSONLayer(spec);
+      overlayLayers[name] = layer;
+      layer.addTo(map);
+      group.addLayer(layer);
+      console.log(`Loaded: ${name} — ${layer.getLayers().length} features`);
+    } catch (e) {
+      console.error(`Failed to load ${spec.name}`, e);
+    }
+  }
+
+  L.control.layers({}, overlayLayers, { collapsed: false }).addTo(map);
+  if (group.getLayers().length) {
+    try { map.fitBounds(group.getBounds(), { padding: [20,20] }); } catch {}
+  }
+
+  map.attributionControl.addAttribution('Data: ArcGIS FeatureServer (GeoJSON)');
+})();
+</script>
+</body>
+</html>
