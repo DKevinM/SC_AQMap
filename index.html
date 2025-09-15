@@ -8,12 +8,24 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <style>
-    :root { --panel-w: 375px; --fs: 8px; }
+    :root { --panel-w: 320px; --fs: 11px; }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto; font-size:var(--fs); }
-    #map   { position:absolute; inset:0 var(--panel-w) 0 0; }
+    #app {
+      display: grid;
+      grid-template-columns: 1fr var(--panel-w);  /* map | sidebar */
+      grid-template-rows: 100vh;                  /* full height */
+      width: 100vw;
+      overflow: hidden;
+    }
+    #map { min-width: 0; height: 100%; }
     #panel {
-      position:absolute; top:0; right:0; width:var(--panel-w); height:100%;
-      background:#fff; border-left:1px solid #ddd; padding:5px 5px; overflow:auto; line-height:1.3;
+      height: 100%;
+      overflow: auto;
+      padding: 8px 10px;
+      border-left: 1px solid #ddd;
+      background: #fff;
+      line-height: 1.32;
+      z-index: 10000;                             /* safely above Leaflet panes */
     }
     h2 { font-size:12px; margin:2px 0 8px; }
     .small { color:#555; font-size:10px; }
@@ -34,10 +46,9 @@
 </head>
 <body>
 <div id="map"></div>
-
-<div id="panel">
+<aside id="panel">
   <h2>Rapid Suitability (MCDA-lite)</h2>
-  <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</div>
+  <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</aside>
 
   <div class="group">
     <label>Objective</label>
@@ -135,8 +146,7 @@ function landUseScore(props) {
 
 /* --------------------------- UI / MAP ------------------------------ */
 const map = L.map('map').setView([53.53, -113.30], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:20}).addTo(map);
-// Make sure Leaflet knows its size after grid layout renders
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
 setTimeout(() => map.invalidateSize(), 0);
 window.addEventListener('resize', () => map.invalidateSize());
 
