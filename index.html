@@ -9,7 +9,8 @@
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
-    html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto; font-size:var(--fs); }
+    html, body { height:100%; margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto; font-size:var(--fs); }
+    /* ★ Wrap map + panel in a grid container */
     #app {
       display: grid;
       grid-template-columns: 1fr var(--panel-w);  /* map | sidebar */
@@ -25,7 +26,7 @@
       border-left: 1px solid #ddd;
       background: #fff;
       line-height: 1.32;
-      z-index: 10000;                             /* safely above Leaflet panes */
+      z-index: 10000; /* panel stack above Leaflet panes just in case */
     }
     h2 { font-size:12px; margin:2px 0 8px; }
     .small { color:#555; font-size:10px; }
@@ -45,71 +46,77 @@
   </style>
 </head>
 <body>
-<div id="map"></div>
-<aside id="panel">
-  <h2>Rapid Suitability (MCDA-lite)</h2>
-  <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</aside>
 
-  <div class="group">
-    <label>Objective</label>
-    <select id="mode">
-      <option value="exposure">Population/Exposure (closer to amenities)</option>
-      <option value="background">Background/Regional (farther from amenities)</option>
-    </select>
-  </div>
+<!-- ★ GRID WRAPPER -->
+<div id="app">
+  <div id="map"></div>
 
-  <div class="group">
-    <label>Roads preference</label>
-    <select id="roadsPref">
-      <option value="closer">Closer is better (near traffic)</option>
-      <option value="farther">Farther is better (background)</option>
-    </select>
-  </div>
+  <!-- ★ Keep EVERYTHING for the sidebar inside this <aside> -->
+  <aside id="panel">
+    <h2>Rapid Suitability (MCDA-lite)</h2>
+    <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</div>
 
-  <div class="group">
-    <label>Hex cell size (km)</label>
-    <div class="row">
-      <input type="range" id="cellkm" min="0.3" max="2.5" step="0.1" value="0.6">
-      <span id="cellkm_val" class="badge">0.6</span>
+    <div class="group">
+      <label>Objective</label>
+      <select id="mode">
+        <option value="exposure">Population/Exposure (closer to amenities)</option>
+        <option value="background">Background/Regional (farther from amenities)</option>
+      </select>
     </div>
-  </div>
 
-  <div class="group">
-    <label>Distance cap for proximity (km) <span class="small">(linear rescale)</span></label>
-    <div class="row">
-      <input type="range" id="dmax" min="0.5" max="6" step="0.5" value="3">
-      <span id="dmax_val" class="badge">3</span>
+    <div class="group">
+      <label>Roads preference</label>
+      <select id="roadsPref">
+        <option value="closer">Closer is better (near traffic)</option>
+        <option value="farther">Farther is better (background)</option>
+      </select>
     </div>
-  </div>
 
-  <div class="group">
-    <label>Weights (auto-normalize)</label>
-    <div class="row"><span class="small" style="width:100px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.25"><span id="w_wifi_val" class="badge">0.25</span></div>
-    <div class="row"><span class="small" style="width:100px">Amenities proximity</span><input type="range" id="w_amen" min="0" max="1" step="0.05" value="0.25"><span id="w_amen_val" class="badge">0.25</span></div>
-    <div class="row"><span class="small" style="width:100px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
-    <div class="row"><span class="small" style="width:100px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
-    <div class="row"><span class="small" style="width:100px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
-    <div class="small muted">Sum is normalized to 1.</div>
-  </div>
+    <div class="group">
+      <label>Hex cell size (km)</label>
+      <div class="row">
+        <input type="range" id="cellkm" min="0.3" max="2.5" step="0.1" value="0.6">
+        <span id="cellkm_val" class="badge">0.6</span>
+      </div>
+    </div>
 
-  <div class="group">
-    <label><input type="checkbox" id="excludePEMU"> Exclude inside Priority Environmental Mgmt Units</label>
-  </div>
+    <div class="group">
+      <label>Distance cap for proximity (km) <span class="small">(linear rescale)</span></label>
+      <div class="row">
+        <input type="range" id="dmax" min="0.5" max="6" step="0.5" value="3">
+        <span id="dmax_val" class="badge">3</span>
+      </div>
+    </div>
 
-  <div class="group">
-    <a id="runBtn" class="btn">Recompute</a>
-    <span id="status" class="small muted">Loading data…</span>
-  </div>
+    <div class="group">
+      <label>Weights (auto-normalize)</label>
+      <div class="row"><span class="small" style="width:100px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.25"><span id="w_wifi_val" class="badge">0.25</span></div>
+      <div class="row"><span class="small" style="width:100px">Amenities proximity</span><input type="range" id="w_amen" min="0" max="1" step="0.05" value="0.25"><span id="w_amen_val" class="badge">0.25</span></div>
+      <div class="row"><span class="small" style="width:100px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
+      <div class="row"><span class="small" style="width:100px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
+      <div class="row"><span class="small" style="width:100px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
+      <div class="small muted">Sum is normalized to 1.</div>
+    </div>
 
-  <div class="group">
-    <div class="small"><b>Legend</b> (low → high)</div>
-    <div class="legend"></div>
-  </div>
+    <div class="group">
+      <label><input type="checkbox" id="excludePEMU"> Exclude inside Priority Environmental Mgmt Units</label>
+    </div>
 
-  <div class="hr"></div>
-  <div class="small">
-    Notes: Uses Wi-Fi bldgs, amenities (Playgrounds, Parks, Playing Fields, Splash Parks), Roads, Land-Use, and Building Footprints. Contours are ignored (no slope inference here).
-  </div>
+    <div class="group">
+      <a id="runBtn" class="btn">Recompute</a>
+      <span id="status" class="small muted">Loading data…</span>
+    </div>
+
+    <div class="group">
+      <div class="small"><b>Legend</b> (low → high)</div>
+      <div class="legend"></div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="small">
+      Notes: Uses Wi-Fi bldgs, amenities (Playgrounds, Parks, Playing Fields, Splash Parks), Roads, Land-Use, and Building Footprints. Contours are ignored (no slope inference here).
+    </div>
+  </aside>
 </div>
 
 <script>
@@ -332,7 +339,6 @@ function recompute(){
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
 function centroidOrPoint(f) {
-  // Return a Point feature for distance calcs
   const g = f.geometry;
   if (!g) return null;
   if (g.type === 'Point') return f;
@@ -361,7 +367,6 @@ function distanceToRoadsKm(pt, fc){
       const d = turf.pointToLineDistance(pt, f, {units:'kilometers'});
       if (d < min) min = d;
     } else {
-      // fallback to centroid distance (if any non-line sneaks in)
       const d = turf.distance(pt, centroidOrPoint(f), {units:'kilometers'});
       if (d < min) min = d;
     }
@@ -373,7 +378,6 @@ function landUseAtPoint(pt, polysFC){
   for (const f of polysFC.features) {
     if (turf.booleanPointInPolygon(pt, f)) return landUseScore(f.properties||{});
   }
-  // fallback: nearest polygon centroid
   if (!polysFC.features.length) return 0.5;
   let best = 0.5, min = Infinity;
   for (const f of polysFC.features) {
@@ -388,7 +392,7 @@ function pointInAnyPolygon(pt, polysFC){
 }
 
 /* --------------------------- WIRE UP ------------------------------- */
-ui.runBtn.addEventListener('click', recompute);
+document.getElementById('runBtn').addEventListener('click', recompute);
 init();
 </script>
 </body>
