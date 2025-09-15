@@ -134,8 +134,11 @@ function landUseScore(props) {
 }
 
 /* --------------------------- UI / MAP ------------------------------ */
-const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap'}).addTo(map);
+const map = L.map('map').setView([53.53, -113.30], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:20}).addTo(map);
+// Make sure Leaflet knows its size after grid layout renders
+setTimeout(() => map.invalidateSize(), 0);
+window.addEventListener('resize', () => map.invalidateSize());
 
 const ui = {
   mode: document.getElementById('mode'),
