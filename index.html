@@ -2,35 +2,96 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet + ArcGIS GeoJSON (GitHub Pages)</title>
+  <title>Rapid Suitability (MCDA-lite) – Leaflet + turf.js</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <style>
-    html, body, #map { height: 100%; margin: 0; }
-    .popup-table { border-collapse: collapse; width: 260px; font-size: 12px; }
-    .popup-table td { border-top: 1px solid #ddd; padding: 2px 4px; vertical-align: top; }
-    .popup-table td:first-child { font-weight: 600; width: 40%; }
+    html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto; }
+    #map { position:absolute; inset:0 320px 0 0; }
+    #panel {
+      position:absolute; top:0; right:0; width:320px; height:100%;
+      background:#fff; border-left:1px solid #ddd; padding:14px; overflow:auto;
+    }
+    h2 { margin:0 0 8px; font-size:18px; }
+    .group { margin:12px 0; }
+    label { display:block; font-size:13px; margin-bottom:4px; }
+    input[type="range"] { width:100%; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .row input { flex:1; }
+    .small { font-size:12px; color:#555; }
+    .btn { display:inline-block; padding:6px 10px; background:#016797; color:#fff; border-radius:8px; cursor:pointer; text-decoration:none; }
+    .badge { font-size:11px; background:#f0f0f0; padding:2px 6px; border-radius:999px; }
   </style>
 </head>
 <body>
+
 <div id="map"></div>
+<div id="panel">
+  <h2>Rapid Suitability (MCDA-lite)</h2>
+  <div class="small">Hex grid scoring from live ArcGIS GeoJSON. Adjust sliders and mode, then <b>Recompute</b>.</div>
+
+  <div class="group">
+    <label>Mode</label>
+    <div class="row">
+      <select id="mode">
+        <option value="exposure">Population/Exposure (closer to playgrounds)</option>
+        <option value="background">Background/Regional (farther from playgrounds)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Hex cell size (km)</label>
+    <div class="row">
+      <input type="range" id="cellkm" min="0.2" max="2.0" step="0.1" value="0.5">
+      <span id="cellkm_val" class="badge">0.5</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Distance cap for proximity scores (km) <span class="small">(linear rescale)</span></label>
+    <div class="row">
+      <input type="range" id="dmax" min="0.5" max="5" step="0.5" value="2">
+      <span id="dmax_val" class="badge">2</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Weights</label>
+    <div class="row"><span class="small" style="width:110px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.30"><span id="w_wifi_val" class="badge">0.30</span></div>
+    <div class="row"><span class="small" style="width:110px">Playgrounds</span><input type="range" id="w_play" min="0" max="1" step="0.05" value="0.25"><span id="w_play_val" class="badge">0.25</span></div>
+    <div class="row"><span class="small" style="width:110px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.30"><span id="w_lu_val" class="badge">0.30</span></div>
+    <div class="row"><span class="small" style="width:110px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.15"><span id="w_bld_val" class="badge">0.15</span></div>
+    <div class="small">Weights are normalized internally (sum→1).</div>
+  </div>
+
+  <div class="group">
+    <a id="runBtn" class="btn">Recompute</a>
+  </div>
+
+  <div class="group small">
+    <b>Legend:</b> light → low suitability; dark → high. Top 10 cells marked.
+  </div>
+</div>
+
 <script>
-const map = L.map('map').setView([53.53, -113.30], 12); // start near Edmonton; we’ll fit to data
+// --- Map setup ---
+const map = L.map('map', { zoomControl: true }).setView([50.45, -104.61], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap'
+  maxZoom: 20, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-// --- Helpers ---------------------------------------------------------------
-function propsTable(props) {
-  const rows = Object.entries(props || {})
-    .filter(([k,v]) => v !== null && v !== '' && k !== 'OBJECTID')
-    .slice(0, 20) // keep popups readable
-    .map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
-  return `<table class="popup-table">${rows}</table>`;
-}
+// --- Data URLs (your live GeoJSON endpoints) ---
+const URLS = {
+  wifi: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+  play: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Playgrounds/FeatureServer/3/query?outFields=*&where=1%3D1&f=geojson',
+  bldg: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+  land: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
+};
 
-// ArcGIS FeatureServer pagination for GeoJSON (handles maxRecordCount)
+// ArcGIS pagination helper (GeoJSON)
 async function fetchAllArcGISGeoJSON(baseUrl, chunk = 2000) {
   const sep = baseUrl.includes('?') ? '&' : '?';
   let offset = 0, all = [];
@@ -44,80 +105,226 @@ async function fetchAllArcGISGeoJSON(baseUrl, chunk = 2000) {
     if (feats.length < chunk) break;
     offset += feats.length;
   }
-  return { type: 'FeatureCollection', features: all };
+  return { type:'FeatureCollection', features:all };
 }
 
-// Generic loader -> returns a Leaflet layer (GeoJSON or cluster-ready)
-async function loadGeoJSONLayer({url, name, pointToLayer, style}) {
-  const gj = await fetchAllArcGISGeoJSON(url);
-  const layer = L.geoJSON(gj, {
-    pointToLayer,
-    style,
-    onEachFeature: (f, lyr) => lyr.bindPopup(propsTable(f.properties || {}))
+// --- Land-use scoring table (edit to your schema/values) ---
+function landUseScore(props) {
+  // Try common field names; fall back to 'default'
+  const key =
+    (props.ZONE || props.DISTRICT || props.LAND_USE || props.LANDUSE || props.Zoning || 'default') + '';
+  const lut = {
+    // Example mapping; tune these:
+    'Industrial': 0.9,
+    'IND': 0.9,
+    'Commercial': 0.8,
+    'COM': 0.8,
+    'Institutional': 0.75,
+    'INS': 0.75,
+    'Residential': 0.6,
+    'RES': 0.6,
+    'Park': 0.4,
+    'OPEN SPACE': 0.4,
+    'Agriculture': 0.5,
+    'default': 0.5
+  };
+  // key may contain subtype; do loose match
+  for (const k of Object.keys(lut)) {
+    if (k !== 'default' && key.toLowerCase().includes(k.toLowerCase())) return lut[k];
+  }
+  return lut['default'];
+}
+
+// --- Layers & state ---
+let hexLayer, topLayer, wifiPts, playPts, bldgPolys, landPolys, bldgCentroids;
+
+const ui = {
+  mode: document.getElementById('mode'),
+  cellkm: document.getElementById('cellkm'),
+  cellkm_val: document.getElementById('cellkm_val'),
+  dmax: document.getElementById('dmax'),
+  dmax_val: document.getElementById('dmax_val'),
+  w_wifi: document.getElementById('w_wifi'),
+  w_wifi_val: document.getElementById('w_wifi_val'),
+  w_play: document.getElementById('w_play'),
+  w_play_val: document.getElementById('w_play_val'),
+  w_lu: document.getElementById('w_lu'),
+  w_lu_val: document.getElementById('w_lu_val'),
+  w_bld: document.getElementById('w_bld'),
+  w_bld_val: document.getElementById('w_bld_val'),
+  runBtn: document.getElementById('runBtn')
+};
+
+function hookSlider(inp, lab) {
+  const f = () => (lab.textContent = (+inp.value).toFixed( (inp.step||'0.1').includes('.') ? 2 : 0 ));
+  inp.addEventListener('input', f); f();
+}
+[ ['cellkm','cellkm_val'], ['dmax','dmax_val'], ['w_wifi','w_wifi_val'],
+  ['w_play','w_play_val'], ['w_lu','w_lu_val'], ['w_bld','w_bld_val'] ]
+  .forEach(([a,b]) => hookSlider(ui[a], ui[b]));
+
+// --- Main compute ---
+async function init() {
+  // Load all 4 layers
+  [wifiPts, playPts, bldgPolys, landPolys] = await Promise.all([
+    fetchAllArcGISGeoJSON(URLS.wifi),
+    fetchAllArcGISGeoJSON(URLS.play),
+    fetchAllArcGISGeoJSON(URLS.bldg),
+    fetchAllArcGISGeoJSON(URLS.land)
+  ]);
+
+  // Precompute building centroids (for density calc)
+  bldgCentroids = { type:'FeatureCollection', features:
+    bldgPolys.features.map(f => turf.centroid(f))
+  };
+
+  // Fit map to land-use extent (usually covers city)
+  try {
+    const bb = turf.bbox(landPolys);
+    map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]], { padding:[20,20] });
+  } catch {}
+
+  recompute();
+}
+
+function recompute() {
+  if (hexLayer) map.removeLayer(hexLayer);
+  if (topLayer) map.removeLayer(topLayer);
+
+  const cellKm = +ui.cellkm.value;
+  const dMax  = +ui.dmax.value;
+  const mode  = ui.mode.value; // 'exposure' or 'background'
+
+  // Normalize weights
+  let w = {
+    wifi: +ui.w_wifi.value,
+    play: +ui.w_play.value,
+    land: +ui.w_lu.value,
+    bden: +ui.w_bld.value
+  };
+  const s = w.wifi + w.play + w.land + w.bden || 1;
+  Object.keys(w).forEach(k => w[k] = w[k] / s);
+
+  // Make hex grid over land-use bbox
+  const bbox = turf.bbox(landPolys);
+  const hex = turf.hexGrid(bbox, cellKm, { units:'kilometers' });
+
+  // Pre-build kd-trees (turf nearest uses brute force; OK for small-mid data)
+  const wifiFC = wifiPts, playFC = playPts, bcentFC = bldgCentroids;
+
+  // For each hex, compute center & scores
+  let best = [], maxBldDen = 0, raw = [];
+  for (const cell of hex.features) {
+    const center = turf.centerOfMass(cell);
+
+    // distances (km) to nearest WiFi / playground
+    const dWifi = nearestDistKm(center, wifiFC);
+    const dPlay = nearestDistKm(center, playFC);
+
+    // building density within 0.1 km (100 m) radius: count centroids
+    const r = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
+    const ptsIn = turf.pointsWithinPolygon(bcentFC, r).features.length;
+    if (ptsIn > maxBldDen) maxBldDen = ptsIn;
+
+    // land-use score at center (point-in-polygon)
+    const luScore = landUseAtPoint(center, landPolys);
+
+    raw.push({ cell, center, dWifi, dPlay, ptsIn, luScore });
+  }
+
+  // Normalize to 0–1 scores
+  const denMax = Math.max(1, maxBldDen);
+  for (const r of raw) {
+    const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);                               // closer better
+    const s_play = (mode === 'exposure')
+      ? clamp(1 - (r.dPlay / dMax), 0, 1)                                           // closer better
+      : clamp( (r.dPlay / dMax), 0, 1 );                                            // farther better (background)
+    const s_bden = clamp(r.ptsIn / denMax, 0, 1);                                   // more buildings nearby
+    const s_land = clamp(r.luScore, 0, 1);
+
+    r.score = w.wifi*s_wifi + w.play*s_play + w.land*s_land + w.bden*s_bden;
+  }
+
+  // Color ramp
+  const minS = Math.min(...raw.map(r=>r.score));
+  const maxS = Math.max(...raw.map(r=>r.score));
+  function colorFor(s) {
+    const t = (s - minS) / (maxS - minS + 1e-9);
+    // light yellow -> teal -> dark blue
+    return `hsl(${200 - 160*t}, ${30 + 40*t}%, ${85 - 45*t}%)`;
+  }
+
+  // Paint hexes
+  hex.features.forEach((f,i) => {
+    const sc = raw[i].score;
+    f.properties = { score: +sc.toFixed(3) };
   });
-  return { name, layer };
+
+  hexLayer = L.geoJSON(hex, {
+    style: f => ({
+      color: '#999', weight: 0.5, fillColor: colorFor(f.properties.score), fillOpacity: 0.75
+    }),
+    onEachFeature: (f, layer) => {
+      layer.bindPopup(`
+        <b>Suitability:</b> ${f.properties.score}<br/>
+        <span class="small">Cell ~${cellKm} km</span>
+      `);
+    }
+  }).addTo(map);
+
+  // Top 10 candidates (by score)
+  const sorted = raw.slice().sort((a,b)=>b.score-a.score).slice(0,10);
+  const topFC = { type:'FeatureCollection', features:
+    sorted.map(r => ({
+      type:'Feature',
+      properties:{ score:+r.score.toFixed(3) },
+      geometry:r.center.geometry
+    }))
+  };
+
+  topLayer = L.geoJSON(topFC, {
+    pointToLayer: (f,latlng) => L.circleMarker(latlng, {
+      radius: 6, weight:2, color:'#fe0002', fillColor:'#ffffff', fillOpacity:1
+    }).bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
+  }).addTo(map);
+
+  // Bring top markers above
+  topLayer.bringToFront();
 }
 
-// --- Your four layers ------------------------------------------------------
-const layersToLoad = [
-  {
-    name: 'Buildings with WiFi',
-    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-    pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-      radius: 6, weight: 1, color: '#016797', fillOpacity: 0.7
-    })
-  },
-  {
-    name: 'Playgrounds',
-    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Playgrounds/FeatureServer/3/query?outFields=*&where=1%3D1&f=geojson',
-    pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-      radius: 5, weight: 1, color: '#0099cb', fillOpacity: 0.6
-    })
-  },
-  {
-    name: 'Building Footprints',
-    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-    style: f => ({ weight: 0.8, color: '#444', fillColor: '#bbb', fillOpacity: 0.4 })
-  },
-  {
-    name: 'Land Use',
-    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-    // color by a plausible categorical field if present (e.g., ZONE / DISTRICT / LAND_USE)
-    style: f => {
-      const p = (f.properties || {});
-      const key = (p.ZONE || p.DISTRICT || p.LAND_USE || 'default') + '';
-      // cheap hash to pick one of fixed hues
-      const hues = [0, 30, 60, 120, 180, 210, 240, 270, 300];
-      const h = hues[Math.abs(key.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % hues.length];
-      return { weight: 0.6, color: `hsl(${h},35%,35%)`, fillColor: `hsl(${h},70%,70%)`, fillOpacity: 0.35 };
-    }
+function nearestDistKm(pt, fc) {
+  if (!fc.features.length) return 999;
+  // brute-force nearest
+  let min = Infinity;
+  for (const f of fc.features) {
+    const d = turf.distance(pt, turf.getCoord(f) ? {type:'Feature', geometry:{type:'Point', coordinates:turf.getCoord(f)}, properties:{}} : turf.centroid(f), {units:'kilometers'});
+    if (d < min) min = d;
   }
-];
+  return min;
+}
 
-// Load all, add to map + layer control, then fit bounds
-(async () => {
-  const overlayLayers = {};
-  const group = L.featureGroup().addTo(map);
-
-  for (const spec of layersToLoad) {
-    try {
-      const {name, layer} = await loadGeoJSONLayer(spec);
-      overlayLayers[name] = layer;
-      layer.addTo(map);
-      group.addLayer(layer);
-      console.log(`Loaded: ${name} — ${layer.getLayers().length} features`);
-    } catch (e) {
-      console.error(`Failed to load ${spec.name}`, e);
-    }
+function landUseAtPoint(pt, polysFC) {
+  // find first polygon containing point; else nearest polygon's score
+  for (const f of polysFC.features) {
+    if (turf.booleanPointInPolygon(pt, f)) return landUseScore(f.properties||{});
   }
-
-  L.control.layers({}, overlayLayers, { collapsed: false }).addTo(map);
-  if (group.getLayers().length) {
-    try { map.fitBounds(group.getBounds(), { padding: [20,20] }); } catch {}
+  // fallback: nearest polygon centroid
+  if (!polysFC.features.length) return 0.5;
+  let best = 0.5, min = Infinity;
+  for (const f of polysFC.features) {
+    const d = turf.distance(pt, turf.centroid(f), {units:'kilometers'});
+    if (d < min) { min = d; best = landUseScore(f.properties||{}); }
   }
+  return best;
+}
 
-  map.attributionControl.addAttribution('Data: ArcGIS FeatureServer (GeoJSON)');
-})();
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+// Hook UI
+ui.runBtn.addEventListener('click', recompute);
+
+// Kick off
+init();
 </script>
 </body>
 </html>
