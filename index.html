@@ -10,23 +10,13 @@
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto; font-size:var(--fs); }
-    /* ★ Wrap map + panel in a grid container */
     #app {
-      display: grid;
-      grid-template-columns: 1fr var(--panel-w);  /* map | sidebar */
-      grid-template-rows: 100vh;                  /* full height */
-      width: 100vw;
-      overflow: hidden;
+      display:grid; grid-template-columns:1fr var(--panel-w); grid-template-rows:100vh; width:100vw; overflow:hidden;
     }
-    #map { min-width: 0; height: 100%; }
+    #map { min-width:0; height:100%; }
     #panel {
-      height: 100%;
-      overflow: auto;
-      padding: 8px 10px;
-      border-left: 1px solid #ddd;
-      background: #fff;
-      line-height: 1.32;
-      z-index: 10000; /* panel stack above Leaflet panes just in case */
+      height:100%; overflow:auto; padding:8px 10px; border-left:1px solid #ddd; background:#fff; line-height:1.32; z-index:10000;
+      display:flex; flex-direction:column;
     }
     h2 { font-size:12px; margin:2px 0 8px; }
     .small { color:#555; font-size:10px; }
@@ -43,15 +33,14 @@
     .err { color:#d33; }
     .hr { height:1px; background:#eee; margin:8px 0; }
     .legend { display:flex; height:10px; margin:4px 0 6px; background:linear-gradient(90deg,#fff7bf,#79bcd7,#0b3c73); border:1px solid #ccc; }
+    /* footer readout fixed at bottom of panel */
+    .footer { margin-top:auto; padding-top:8px; border-top:1px dashed #e5e5e5; }
   </style>
 </head>
 <body>
-
-<!-- ★ GRID WRAPPER -->
 <div id="app">
   <div id="map"></div>
 
-  <!-- ★ Keep EVERYTHING for the sidebar inside this <aside> -->
   <aside id="panel">
     <h2>Rapid Suitability (MCDA-lite)</h2>
     <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</div>
@@ -90,16 +79,23 @@
 
     <div class="group">
       <label>Weights (auto-normalize)</label>
-      <div class="row"><span class="small" style="width:100px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.25"><span id="w_wifi_val" class="badge">0.25</span></div>
-      <div class="row"><span class="small" style="width:100px">Amenities proximity</span><input type="range" id="w_amen" min="0" max="1" step="0.05" value="0.25"><span id="w_amen_val" class="badge">0.25</span></div>
-      <div class="row"><span class="small" style="width:100px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
-      <div class="row"><span class="small" style="width:100px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
-      <div class="row"><span class="small" style="width:100px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
+      <div class="row"><span class="small" style="width:110px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.25"><span id="w_wifi_val" class="badge">0.25</span></div>
+      <div class="row"><span class="small" style="width:110px">Amenities proximity</span><input type="range" id="w_amen" min="0" max="1" step="0.05" value="0.25"><span id="w_amen_val" class="badge">0.25</span></div>
+      <div class="row"><span class="small" style="width:110px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
+      <div class="row"><span class="small" style="width:110px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
+      <div class="row"><span class="small" style="width:110px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
       <div class="small muted">Sum is normalized to 1.</div>
     </div>
 
     <div class="group">
       <label><input type="checkbox" id="excludePEMU"> Exclude inside Priority Environmental Mgmt Units</label>
+    </div>
+
+    <!-- NEW: Overlay toggles -->
+    <div class="group">
+      <label>Overlays (off by default)</label>
+      <label class="small"><input type="checkbox" id="togglePA"> Show PurpleAir sensors</label>
+      <label class="small"><input type="checkbox" id="toggleStations"> Show AQHI stations</label>
     </div>
 
     <div class="group">
@@ -115,6 +111,11 @@
     <div class="hr"></div>
     <div class="small">
       Notes: Uses Wi-Fi bldgs, amenities (Playgrounds, Parks, Playing Fields, Splash Parks), Roads, Land-Use, and Building Footprints. Contours are ignored (no slope inference here).
+    </div>
+
+    <!-- NEW: Land-use score readout at panel bottom -->
+    <div class="footer small">
+      <b>Land-use score here:</b> <span id="lu_readout">—</span>
     </div>
   </aside>
 </div>
@@ -133,7 +134,14 @@ const URLS = {
   land:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
 
-// Land-use mapping: adjust keys and scores to your schema
+// NEW: External point layers (PurpleAir + your stations)
+const LAYER_URLS = {
+  purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json',
+  // TODO: set this to your stations JSON/GeoJSON (or a CSV converted to JSON)
+  stations:  ''  // e.g., 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AQHI_stations.geojson'
+};
+
+// Land-use mapping (unchanged)
 function landUseScore(props) {
   const key = (props.ZONE || props.DISTRICT || props.LAND_USE || props.LANDUSE || props.Zoning || 'default') + '';
   const lut = {
@@ -175,8 +183,11 @@ const ui = {
   w_bld: document.getElementById('w_bld'),
   w_bld_val: document.getElementById('w_bld_val'),
   excludePEMU: document.getElementById('excludePEMU'),
+  togglePA: document.getElementById('togglePA'),
+  toggleStations: document.getElementById('toggleStations'),
   runBtn: document.getElementById('runBtn'),
-  status: document.getElementById('status')
+  status: document.getElementById('status'),
+  lu_readout: document.getElementById('lu_readout')
 };
 function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
 [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
@@ -197,8 +208,10 @@ async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
   return { type:'FeatureCollection', features:all };
 }
 
-let LAYERS = {}; // holds GeoJSON FeatureCollections we use
+let LAYERS = {};
 let hexLayer, topLayer;
+// NEW: overlay groups
+let paLayer = null, stnLayer = null;
 
 async function init(){
   try {
@@ -214,7 +227,7 @@ async function init(){
       fetchAllArcGISGeoJSON(URLS.pemu),
       fetchAllArcGISGeoJSON(URLS.land)
     ]);
-    // Build amenities by merging multiple point-ish layers (centroids for polys)
+
     const amenities = {
       type:'FeatureCollection',
       features: []
@@ -227,14 +240,104 @@ async function init(){
 
     LAYERS = { wifi, amenities, bldgPolys: bldg, bldgCentroids, roads, pemu, land };
 
-    // Fit to land-use bbox
     try { const bb = turf.bbox(land); map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]], {padding:[15,15]}); } catch {}
+
+    // wire overlay toggles
+    ui.togglePA.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        if (!paLayer) paLayer = await buildExternalPointsLayer(LAYER_URLS.purpleair, { color:'#7a1fa2', label:'PurpleAir' });
+        paLayer && paLayer.addTo(map).bringToFront();
+      } else {
+        paLayer && map.removeLayer(paLayer);
+      }
+    });
+    ui.toggleStations.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        if (!stnLayer) {
+          if (!LAYER_URLS.stations) {
+            alert('Set LAYER_URLS.stations to your stations JSON/GeoJSON URL.');
+            e.target.checked = false; return;
+          }
+          stnLayer = await buildExternalPointsLayer(LAYER_URLS.stations, { color:'#0b62a4', label:'Station' });
+        }
+        stnLayer && stnLayer.addTo(map).bringToFront();
+      } else {
+        stnLayer && map.removeLayer(stnLayer);
+      }
+    });
 
     ui.status.textContent = 'Ready. Click Recompute.';
   } catch (e) {
     console.error(e);
     ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
   }
+}
+
+/* -------------- Build external points layer (robust parser) ------- */
+async function buildExternalPointsLayer(url, style={}) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+
+    // try JSON parse
+    let json;
+    try { json = JSON.parse(text); }
+    catch { throw new Error('Invalid JSON'); }
+
+    let fc = null;
+
+    // If already GeoJSON FeatureCollection
+    if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
+      fc = json;
+    } else if (Array.isArray(json)) {
+      fc = arrayToFeatureCollection(json);
+    } else if (json && json.data && Array.isArray(json.data)) {
+      fc = arrayToFeatureCollection(json.data);
+    } else if (json && json.features) {
+      fc = { type:'FeatureCollection', features: json.features };
+    } else {
+      // last resort: try to detect single-object map
+      fc = arrayToFeatureCollection(Object.values(json));
+    }
+
+    const layer = L.geoJSON(fc, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 4,
+        weight: 1.5,
+        color: style.color || '#333',
+        fillColor: '#fff',
+        fillOpacity: 1
+      }).bindTooltip(f.properties && (f.properties.name || f.properties.label || f.properties.id || style.label) || style.label || '', {direction:'top', offset:[0,-6]})
+    });
+
+    return layer;
+  } catch (err) {
+    console.error('Failed to build points layer for', url, err);
+    alert(`Failed to load ${style.label||'layer'}: ${err.message}`);
+    return null;
+  }
+}
+
+// Convert array of rows with lat/lon-ish keys to FeatureCollection
+function arrayToFeatureCollection(arr) {
+  const latKeys = ['lat','latitude','Latitude','LAT','Lat'];
+  const lonKeys = ['lon','lng','long','longitude','Longitude','LON','Lng'];
+  const nameKeys = ['name','Name','label','Label','station','Station','title','Title','id','ID'];
+
+  const feats = [];
+  for (const row of arr) {
+    const latK = latKeys.find(k => k in row);
+    const lonK = lonKeys.find(k => k in row);
+    if (!latK || !lonK) continue;
+    const nameK = nameKeys.find(k => k in row);
+    feats.push({
+      type:'Feature',
+      properties: { ...(row||{}), name: nameK ? row[nameK] : undefined },
+      geometry: { type:'Point', coordinates:[ +row[lonK], +row[latK] ] }
+    });
+  }
+  return { type:'FeatureCollection', features:feats };
 }
 
 /* --------------------------- SCORING ------------------------------ */
@@ -247,8 +350,8 @@ function recompute(){
 
   const cellKm = +ui.cellkm.value;
   const dMax   = +ui.dmax.value;
-  const mode   = ui.mode.value;                 // exposure | background
-  const roadsPref = ui.roadsPref.value;         // closer | farther
+  const mode   = ui.mode.value;
+  const roadsPref = ui.roadsPref.value;
   const excludePEMU = ui.excludePEMU.checked;
 
   // Weights normalized
@@ -272,56 +375,54 @@ function recompute(){
 
     const dWifi = distanceToFeaturesKm(center, wifi);
     const dAmen = distanceToFeaturesKm(center, amenities);
-    const dRoad = distanceToRoadsKm(center, roads); // line distance
+    const dRoad = distanceToRoadsKm(center, roads);
 
-    // bldg density in 0.1 km buffer
     const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
     const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length;
     if (dens > maxBldDen) maxBldDen = dens;
 
-    // land-use: point-in-polygon score (fallback nearest poly centroid)
     const lu = landUseAtPoint(center, land);
 
-    // optional constraint mask
     let allowed = 1;
     if (excludePEMU && pointInAnyPolygon(center, pemu)) allowed = 0;
 
     raw.push({ cell, center, dWifi, dAmen, dRoad, dens, lu, allowed });
   }
 
-  // Scale to 0–1 and combine
+  // Scale 0–1 and combine
   const denMax = Math.max(1, maxBldDen);
   for (const r of raw) {
-    const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);                     // closer better
+    const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);
     const s_amen = (mode === 'exposure') ? clamp(1 - (r.dAmen / dMax),0,1)
-                                         : clamp(  (r.dAmen / dMax),0,1); // farther better
+                                         : clamp(  (r.dAmen / dMax),0,1);
     const s_road = (roadsPref === 'closer') ? clamp(1 - (r.dRoad / dMax),0,1)
                                             : clamp(  (r.dRoad / dMax),0,1);
     const s_bld  = clamp(r.dens / denMax, 0, 1);
     const s_lu   = clamp(r.lu, 0, 1);
 
     r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road + w.lu*s_lu + w.bld*s_bld;
-    r.score    = r.scoreRaw * r.allowed; // apply constraint
+    r.score    = r.scoreRaw * r.allowed;
   }
 
-  // Color ramp
   const minS = Math.min(...raw.map(r=>r.score));
   const maxS = Math.max(...raw.map(r=>r.score));
   function colorFor(s){
     const t = (s - minS) / (maxS - minS + 1e-9);
-    return `hsl(${200 - 160*t}, ${30 + 40*t}%, ${85 - 45*t}%)`; // light yellow -> teal -> dark blue
+    return `hsl(${200 - 160*t}, ${30 + 40*t}%, ${85 - 45*t}%)`;
   }
 
-  // Paint hexes
-  hex.features.forEach((f,i)=>{ f.properties = { score:+raw[i].score.toFixed(3) }; });
+  // Paint hexes (include lu for popup)
+  hex.features.forEach((f,i)=>{ f.properties = { score:+raw[i].score.toFixed(3), lu:+raw[i].lu.toFixed(2) }; });
   hexLayer = L.geoJSON(hex, {
     style: f => ({ color:'#aaa', weight:0.4, fillColor:colorFor(f.properties.score), fillOpacity:0.78 }),
     onEachFeature:(f,lyr)=>{
-      lyr.bindPopup(`<b>Suitability</b>: ${f.properties.score}`);
+      lyr.bindPopup(`<b>Suitability</b>: ${f.properties.score}<br><span class="small">Land-use score: ${f.properties.lu}</span>`);
+      // update bottom readout when a cell is clicked
+      lyr.on('click', () => { ui.lu_readout.textContent = f.properties.lu; });
     }
   }).addTo(map);
 
-  // Top 10 candidates
+  // Top 10
   const sorted = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
   const topFC = { type:'FeatureCollection', features: sorted.map(r=>({
     type:'Feature', properties:{score:+r.score.toFixed(3)}, geometry:r.center.geometry
@@ -333,36 +434,28 @@ function recompute(){
   topLayer.bringToFront();
 
   ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
+  // reset footer on recompute
+  ui.lu_readout.textContent = '—';
 }
 
 /* --------------------------- HELPERS ------------------------------- */
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-
-function centroidOrPoint(f) {
-  const g = f.geometry;
-  if (!g) return null;
-  if (g.type === 'Point') return f;
-  return turf.centroid(f);
-}
-
+function centroidOrPoint(f) { const g = f.geometry; if (!g) return null; return g.type === 'Point' ? f : turf.centroid(f); }
 function distanceToFeaturesKm(pt, fc){
   if (!fc.features.length) return 999;
   let min = Infinity;
   for (const f of fc.features) {
-    const pf = centroidOrPoint(f);
-    if (!pf) continue;
+    const pf = centroidOrPoint(f); if (!pf) continue;
     const d = turf.distance(pt, pf, {units:'kilometers'});
     if (d < min) min = d;
   }
   return min;
 }
-
 function distanceToRoadsKm(pt, fc){
   if (!fc.features.length) return 999;
   let min = Infinity;
   for (const f of fc.features) {
-    const g = f.geometry;
-    if (!g) continue;
+    const g = f.geometry; if (!g) continue;
     if (g.type === 'LineString' || g.type === 'MultiLineString') {
       const d = turf.pointToLineDistance(pt, f, {units:'kilometers'});
       if (d < min) min = d;
@@ -373,11 +466,8 @@ function distanceToRoadsKm(pt, fc){
   }
   return min;
 }
-
 function landUseAtPoint(pt, polysFC){
-  for (const f of polysFC.features) {
-    if (turf.booleanPointInPolygon(pt, f)) return landUseScore(f.properties||{});
-  }
+  for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt, f)) return landUseScore(f.properties||{});
   if (!polysFC.features.length) return 0.5;
   let best = 0.5, min = Infinity;
   for (const f of polysFC.features) {
@@ -386,13 +476,10 @@ function landUseAtPoint(pt, polysFC){
   }
   return best;
 }
-function pointInAnyPolygon(pt, polysFC){
-  for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt, f)) return true;
-  return false;
-}
+function pointInAnyPolygon(pt, polysFC){ for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt, f)) return true; return false; }
 
 /* --------------------------- WIRE UP ------------------------------- */
-document.getElementById('runBtn').addEventListener('click', recompute);
+ui.runBtn.addEventListener('click', recompute);
 init();
 </script>
 </body>
