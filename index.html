@@ -255,7 +255,7 @@ let LAYERS = {};
 let hexLayer, topLayer;
 // NEW: overlay groups
 let paLayer = null, stnLayer = null;
-
+ 
 async function init(){
   try {
     ui.status.textContent = 'Loading live layers…';
@@ -285,6 +285,45 @@ async function init(){
 
     try { const bb = turf.bbox(land); map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]], {padding:[15,15]}); } catch {}
 
+
+    // ---- Build the stations layer from data.js ----
+    async function buildStationsLayer() {
+      try {
+        // wait until CSV parsed
+        await window.dataReady;
+        const rows = await window.fetchAllStationData();  // [{lat, lon, aqhi, html, stationName}, …]
+        if (!rows || !rows.length) { console.warn('No station rows'); return L.layerGroup(); }
+      
+        const markers = rows.map(r => {
+          const m = L.circleMarker([+r.lat, +r.lon], {
+            radius: 5,
+            weight: 2,
+            color: '#333',
+            fillColor: colorForAQHI(r.aqhi),
+            fillOpacity: '#2ca25f'
+          }).bindPopup(r.html);
+          m.bindTooltip(`${r.stationName} — AQHI: ${r.aqhi}`, {direction:'top', offset:[0,-8]});
+          return m;
+        });
+    
+        return L.layerGroup(markers);
+      } catch (err) {
+        console.error('Stations build failed:', err);
+        return L.layerGroup();
+      }
+    }
+    
+    // Build lazily when user first toggles it on
+    ui.toggleStations.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        if (!stnLayer) stnLayer = await buildStationsLayer();
+        stnLayer.addTo(map).bringToFront();
+      } else {
+        stnLayer && map.removeLayer(stnLayer);
+      }
+    });
+  
+    
     // --- Build visual Leaflet layers for toggling ---
     let layerWifi   = L.geoJSON(LAYERS.wifi,  { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}).bindPopup('Wi-Fi building') });
     let layerPlay   = L.geoJSON(LAYERS.amenities, { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.7}).bindPopup('Amenity') });
