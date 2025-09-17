@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
@@ -154,11 +155,34 @@ const URLS = {
   parks: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Parks/FeatureServer/2/query?outFields=*&where=1%3D1&f=geojson',
   fields:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Playing_Fields/FeatureServer/5/query?outFields=*&where=1%3D1&f=geojson',
   splash:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Splash_Parks/FeatureServer/8/query?outFields=*&where=1%3D1&f=geojson',
-  bldg:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-  roads: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+//  bldg:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+//  roads: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
   pemu:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Priority_Environment_Management_Units/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
   land:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
+
+  // Roads — fixed width, no zoom listener, minimal simplification
+const roadsLayer = L.esri.featureLayer({
+  url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0',
+  pane: 'features',
+  where: '1=1',
+  fields: ['*'],
+  style: { color: '#a33', weight: 1.2, opacity: 0.9 },  // <-- constant width
+  simplifyFactor: 0.1,  // was 0.6; too high makes lines look jagged/missing
+  precision: 7          // was 5; bumping preserves geometry detail
+}).addTo(map);
+
+// Building footprints — fixed outline/fill, no zoom-based changes
+const footprintsLayer = L.esri.featureLayer({
+  url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0',
+  pane: 'features',
+  where: '1=1',
+  fields: ['*'],
+  style: { color: '#444', weight: 0.7, fillColor: '#bdbdbd', fillOpacity: 0.35 },
+  simplifyFactor: 0.1,
+  precision: 7
+}).addTo(map);
+
 
 // External points (only PurpleAir here)
 const LAYER_URLS = {
@@ -195,6 +219,11 @@ function landUseAtPointWithDetails(pt, polysFC){
 /* --------------------------- UI / MAP ------------------------------ */
 const map = L.map('map').setView([53.53, -113.30], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
+// Panes (Z-order): tiles (200) < features (400) < suitability (410) < markers (420)
+map.createPane('features');    map.getPane('features').style.zIndex = 400;
+map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
+map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
+
 setTimeout(() => map.invalidateSize(), 0);
 window.addEventListener('resize', () => map.invalidateSize());
 
@@ -531,12 +560,13 @@ function recompute(){
   });
   if (hexLayer) map.removeLayer(hexLayer);
   hexLayer = L.geoJSON(hex, {
-    style: f => ({ color:'#aaa', weight:0.4, fillColor:colorFor(f.properties.score), fillOpacity:0.78 }),
-    onEachFeature:(f,lyr)=>{
-      const p = f.properties;
-      lyr.bindPopup(`<b>Suitability</b>: ${p.score}<br><b>Land-use:</b> ${p.lu_label} (score ${p.lu_score})`);
-      lyr.on('click', () => { ui.lu_readout.textContent = `${p.lu_label} (${p.lu_score})`; });
-    }
+    pane: 'suitability',
+    style: f => ({ color:'#aaa', weight:0.4, fillColor: colorFor(f.properties.score), fillOpacity: 0.78 })
+  }).addTo(map);
+  
+  topLayer = L.geoJSON(topFC, {
+    pane: 'markers',
+    pointToLayer: (f, ll) => L.circleMarker(ll, { radius:6, weight:2, color:'#fe0002', fillColor:'#fff', fillOpacity:1 })
   }).addTo(map);
   if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
 
