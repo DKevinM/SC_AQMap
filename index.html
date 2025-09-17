@@ -229,18 +229,22 @@ function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(i
 
 /* --------------------------- DATA LOAD ---------------------------- */
 async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
-  const sep = baseUrl.includes('?') ? '&' : '?'; let offset = 0, all = [];
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  let offset = 0, all = [];
   while (true) {
-    const url = `${baseUrl}${sep}resultOffset=${offset}&resultRecordCount=${chunk}`;
+    const url = `${baseUrl}${sep}returnExceededLimitFeatures=true&orderByFields=OBJECTID&outSR=4326&resultOffset=${offset}&resultRecordCount=${chunk}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const gj = await res.json();
     const feats = gj.features || [];
+    if (feats.length === 0) break;
     all = all.concat(feats);
     if (feats.length < chunk) break;
     offset += feats.length;
+    // safety: avoid runaway loops
+    if (offset > 1_000_000) break;
   }
-  return { type:'FeatureCollection', features:all };
+  return { type:'FeatureCollection', features: all };
 }
 
 let LAYERS = {};
@@ -295,19 +299,58 @@ async function init(){
         .concat(splash.features)
     };
     const bldgCentroids = { type:'FeatureCollection', features: bldg.features.map(f=>turf.centroid(f)) };
-
-    LAYERS = { wifi, amenities, bldgPolys: bldg, bldgCentroids, roads, pemu, land };
+  
+    LAYERS = {
+      wifi,
+      play,            // <-- keep raw playground points
+      parks,           // <-- parks polygons
+      fields,          // <-- fields polygons
+      splash,          // <-- splash parks (points)
+      amenities,       // merged points for scoring only
+      bldgPolys: bldg,
+      bldgCentroids,
+      roads,
+      pemu,
+      land
+    };
 
     try { const bb = turf.bbox(land); map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]], {padding:[15,15]}); } catch {}
 
     // --- Build overlay display layers and expose for toggles ---
     const overlay = {
-      layerWifi : L.geoJSON(LAYERS.wifi,      { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}).bindPopup('Wi-Fi building') }),
-      layerPlay : L.geoJSON(LAYERS.amenities, { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.7}).bindPopup('Amenity') }),
-      layerRoads: L.geoJSON(LAYERS.roads,     { style:()=>({color:'#a16d00', weight:1}) }),
-      layerBldg : L.geoJSON(LAYERS.bldgPolys, { style:()=>({color:'#444', weight:0.8, fillColor:'#bbb', fillOpacity:0.3}) }),
-      layerPEMU : L.geoJSON(LAYERS.pemu,      { style:()=>({color:'#6a0080', weight:1.2, fillColor:'#dcb6ef', fillOpacity:0.25}) }).bindTooltip('Priority Env. Mgmt Unit'),
-      layerLand : L.geoJSON(LAYERS.land, {
+      layerWifi  : L.geoJSON(LAYERS.wifi,  {
+        pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:5,weight:1,color:'#016797',fillOpacity:0.8})
+      }).bindTooltip('Wi-Fi'),
+    
+      layerPlay  : L.geoJSON(LAYERS.play,  {  // Playgrounds (points)
+        pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9})
+      }).bindTooltip('Playground'),
+    
+      layerParks : L.geoJSON(LAYERS.parks, {  // Parks (polygons)
+        style:()=>({color:'#2e7d32', weight:1, fillColor:'#a5d6a7', fillOpacity:0.25})
+      }).bindTooltip('Park'),
+    
+      layerFields: L.geoJSON(LAYERS.fields,{  // Playing fields (polygons)
+        style:()=>({color:'#1b5e20', weight:1, fillColor:'#c8e6c9', fillOpacity:0.25})
+      }).bindTooltip('Playing Field'),
+    
+      layerSplash: L.geoJSON(LAYERS.splash,{  // Splash Parks (points)
+        pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9})
+      }).bindTooltip('Splash Park'),
+    
+      layerRoads : L.geoJSON(LAYERS.roads, {  // Roads (lines)
+        style:()=>({color:'#a16d00', weight:1})
+      }),
+    
+      layerBldg  : L.geoJSON(LAYERS.bldgPolys, {
+        style:()=>({color:'#444', weight:0.8, fillColor:'#bbb', fillOpacity:0.3})
+      }),
+    
+      layerPEMU  : L.geoJSON(LAYERS.pemu, {
+        style:()=>({color:'#6a0080', weight:1.2, fillColor:'#dcb6ef', fillOpacity:0.25})
+      }).bindTooltip('Priority Env. Mgmt Unit'),
+    
+      layerLand  : L.geoJSON(LAYERS.land, {   // Land-use polygons (display tint)
         style: f => {
           const {score} = landUseScoreAndLabel(f.properties||{});
           const t = (score - 0.4) / (0.9 - 0.4);
@@ -320,6 +363,7 @@ async function init(){
       })
     };
     window._overlayLayers = overlay;
+
 
     // helper to wire a checkbox to a layer (and apply initial state)
     function bindToggle(id, layer){
@@ -337,6 +381,9 @@ async function init(){
     bindToggle('toggleBldg',   overlay.layerBldg);
     bindToggle('togglePEMU',   overlay.layerPEMU);
     bindToggle('toggleLand',   overlay.layerLand);
+    bindToggle('toggleParks',  overlay.layerParks);
+    bindToggle('toggleFields', overlay.layerFields);
+    bindToggle('toggleSplash', overlay.layerSplash);
 
     // PurpleAir toggle
     ui.togglePA.addEventListener('change', async (e) => {
