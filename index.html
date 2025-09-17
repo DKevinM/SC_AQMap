@@ -5,9 +5,9 @@
   <title>Rapid Suitability (MCDA-lite) — Strathcona County</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" defer></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" defer></script>
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto; font-size:var(--fs); }
@@ -220,12 +220,18 @@ function landUseAtPointWithDetails(pt, polysFC){
 const map = L.map('map').setView([53.53, -113.30], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
 // Panes (Z-order): tiles (200) < features (400) < suitability (410) < markers (420)
-map.createPane('features');    map.getPane('features').style.zIndex = 400;
-map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
-map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
+window.addEventListener('DOMContentLoaded', () => {
+  // 1) CREATE MAP FIRST (before any helper uses `map`)
+  const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20}).addTo(map);
 
-setTimeout(() => map.invalidateSize(), 0);
-window.addEventListener('resize', () => map.invalidateSize());
+  // 2) PANES (z-order)
+  map.createPane('features');    map.getPane('features').style.zIndex = 400;
+  map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
+  map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
+  
+//setTimeout(() => map.invalidateSize(), 0);
+//window.addEventListener('resize', () => map.invalidateSize());
 
 const ui = {
   mode: document.getElementById('mode'),
