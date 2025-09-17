@@ -10,9 +10,7 @@
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto; font-size:var(--fs); }
-    #app {
-      display:grid; grid-template-columns:1fr var(--panel-w); grid-template-rows:100vh; width:100vw; overflow:hidden;
-    }
+    #app { display:grid; grid-template-columns:1fr var(--panel-w); grid-template-rows:100vh; width:100vw; overflow:hidden; }
     #map { min-width:0; height:100%; }
     #panel {
       height:100%; overflow:auto; padding:8px 10px; border-left:1px solid #ddd; background:#fff; line-height:1.32; z-index:10000;
@@ -27,14 +25,13 @@
     select, input[type="checkbox"] { font-size:var(--fs); }
     .btn { display:inline-block; padding:5px 5px; background:#016797; color:#fff; border-radius:7px; cursor:pointer; text-decoration:none; }
     .badge { font-size:11px; background:#f0f0f0; padding:1px 5px; border-radius:999px; }
-    .muted { color:#777; }
-    .ok { color:#0a7; }
-    .warn { color:#d70; }
-    .err { color:#d33; }
+    .muted { color:#777; } .ok { color:#0a7; } .warn { color:#d70; } .err { color:#d33; }
     .hr { height:1px; background:#eee; margin:8px 0; }
     .legend { display:flex; height:10px; margin:4px 0 6px; background:linear-gradient(90deg,#fff7bf,#79bcd7,#0b3c73); border:1px solid #ccc; }
-    /* footer readout fixed at bottom of panel */
     .footer { margin-top:auto; padding-top:8px; border-top:1px dashed #e5e5e5; }
+    /* tighter layers list */
+    .layers-list label { display:block; margin:0; line-height:1.2; }
+    .layers-list label + label { margin-top:2px; }
   </style>
 </head>
 <body>
@@ -94,7 +91,7 @@
     <!-- LAYERS: click on/off -->
     <div class="group">
       <label>Layers (click to show/hide)</label>
-      <div class="small">
+      <div class="layers-list small">
         <label><input type="checkbox" id="toggleHex" checked> Suitability hexes</label>
         <label><input type="checkbox" id="toggleTop" checked> Top 10 candidates</label>
         <label><input type="checkbox" id="toggleWifi"> Buildings with Wi-Fi</label>
@@ -140,15 +137,15 @@
       Notes: Uses Wi-Fi bldgs, amenities (Playgrounds, Parks, Playing Fields, Splash Parks), Roads, Land-Use, and Building Footprints. Contours are ignored (no slope inference here).
     </div>
 
-    <!-- NEW: Land-use score readout at panel bottom -->
     <div class="footer small">
       <b>Land-use score here:</b> <span id="lu_readout">—</span>
     </div>
   </aside>
 </div>
 
-<script src="data.js"></script> 
-  
+<!-- stations data helpers -->
+<script src="data.js"></script>
+
 <script>
 /* ------------------------- CONFIG / LAYERS ------------------------- */
 const URLS = {
@@ -163,15 +160,12 @@ const URLS = {
   land:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
 
-// NEW: External point layers (PurpleAir + your stations)
+// External points (only PurpleAir here)
 const LAYER_URLS = {
-  purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json',
-  // TODO: set this to your stations JSON/GeoJSON (or a CSV converted to JSON)
-  stations:  ''  // e.g., 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AQHI_stations.geojson'
+  purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json'
 };
 
-  
-// Land-use mapping (unchanged)
+// land-use mapping (label + score)
 function landUseScoreAndLabel(props) {
   const raw = (props.ZONE || props.DISTRICT || props.LAND_USE || props.LANDUSE || props.Zoning || '').toString();
   const lut = [
@@ -190,7 +184,6 @@ function landUseAtPointWithDetails(pt, polysFC){
     if (turf.booleanPointInPolygon(pt, f)) return landUseScoreAndLabel(f.properties||{});
   }
   if (!polysFC.features.length) return {score:0.5, label:'(no polygons)'};
-  // fallback to nearest polygon
   let best = {score:0.5, label:'Nearest poly'}, min = Infinity;
   for (const f of polysFC.features) {
     const d = turf.distance(pt, turf.centroid(f), {units:'kilometers'});
@@ -227,7 +220,9 @@ const ui = {
   toggleStations: document.getElementById('toggleStations'),
   runBtn: document.getElementById('runBtn'),
   status: document.getElementById('status'),
-  lu_readout: document.getElementById('lu_readout')
+  lu_readout: document.getElementById('lu_readout'),
+  toggleHex: document.getElementById('toggleHex'),
+  toggleTop: document.getElementById('toggleTop'),
 };
 function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
 [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
@@ -250,9 +245,32 @@ async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
 
 let LAYERS = {};
 let hexLayer, topLayer;
-// NEW: overlay groups
 let paLayer = null, stnLayer = null;
- 
+
+function colorForAQHI(a){
+  const v = Number(a);
+  if (isNaN(v)) return '#666';
+  if (v <= 3)  return '#2ca25f';
+  if (v <= 6)  return '#ffb000';
+  if (v <= 10) return '#d73027';
+  return '#7a1fa2';
+}
+
+async function buildStationsLayer() {
+  try {
+    await window.dataReady;
+    const rows = await window.fetchAllStationData();
+    if (!rows || !rows.length) { console.warn('No station rows'); return L.layerGroup(); }
+    const markers = rows.map(r => L.circleMarker([+r.lat,+r.lon],{
+      radius:5, weight:2, color:'#333', fillColor:colorForAQHI(r.aqhi), fillOpacity:1
+    }).bindPopup(r.html).bindTooltip(`${r.stationName} — AQHI: ${r.aqhi}`,{direction:'top',offset:[0,-8]}));
+    return L.layerGroup(markers);
+  } catch (err) {
+    console.error('Stations build failed:', err);
+    return L.layerGroup();
+  }
+}
+
 async function init(){
   try {
     ui.status.textContent = 'Loading live layers…';
@@ -282,70 +300,45 @@ async function init(){
 
     try { const bb = turf.bbox(land); map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]], {padding:[15,15]}); } catch {}
 
+    // --- Build overlay display layers and expose for toggles ---
+    const overlay = {
+      layerWifi : L.geoJSON(LAYERS.wifi,      { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}).bindPopup('Wi-Fi building') }),
+      layerPlay : L.geoJSON(LAYERS.amenities, { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.7}).bindPopup('Amenity') }),
+      layerRoads: L.geoJSON(LAYERS.roads,     { style:()=>({color:'#a16d00', weight:1}) }),
+      layerBldg : L.geoJSON(LAYERS.bldgPolys, { style:()=>({color:'#444', weight:0.8, fillColor:'#bbb', fillOpacity:0.3}) }),
+      layerPEMU : L.geoJSON(LAYERS.pemu,      { style:()=>({color:'#6a0080', weight:1.2, fillColor:'#dcb6ef', fillOpacity:0.25}) }).bindTooltip('Priority Env. Mgmt Unit'),
+      layerLand : L.geoJSON(LAYERS.land, {
+        style: f => {
+          const {score} = landUseScoreAndLabel(f.properties||{});
+          const t = (score - 0.4) / (0.9 - 0.4);
+          return { color:'#666', weight:0.5, fillColor:`hsl(${210-160*Math.max(0,Math.min(1,t))},60%,70%)`, fillOpacity:0.35 };
+        },
+        onEachFeature:(f,lyr)=> {
+          const det = landUseScoreAndLabel(f.properties||{});
+          lyr.bindPopup(`<b>Land-use</b>: ${det.label}<br><b>Score:</b> ${det.score}`);
+        }
+      })
+    };
+    window._overlayLayers = overlay;
 
-    // ---- Build the stations layer from data.js ----
-    async function buildStationsLayer() {
-      try {
-        // wait until CSV parsed
-        await window.dataReady;
-        const rows = await window.fetchAllStationData();  // [{lat, lon, aqhi, html, stationName}, …]
-        if (!rows || !rows.length) { console.warn('No station rows'); return L.layerGroup(); }
-      
-        const markers = rows.map(r => {
-          const m = L.circleMarker([+r.lat, +r.lon], {
-            radius: 5,
-            weight: 2,
-            color: '#333',
-            fillColor: colorForAQHI(r.aqhi),
-            fillOpacity: '#2ca25f'
-          }).bindPopup(r.html);
-          m.bindTooltip(`${r.stationName} — AQHI: ${r.aqhi}`, {direction:'top', offset:[0,-8]});
-          return m;
-        });
-    
-        return L.layerGroup(markers);
-      } catch (err) {
-        console.error('Stations build failed:', err);
-        return L.layerGroup();
-      }
+    // helper to wire a checkbox to a layer (and apply initial state)
+    function bindToggle(id, layer){
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.checked) { layer.addTo(map); layer.bringToFront?.(); }
+      el.addEventListener('change', e => {
+        if (e.target.checked) { layer.addTo(map); layer.bringToFront?.(); }
+        else { map.removeLayer(layer); }
+      });
     }
-    
-    // Build lazily when user first toggles it on
-    ui.toggleStations.addEventListener('change', async (e) => {
-      if (e.target.checked) {
-        if (!stnLayer) stnLayer = await buildStationsLayer();
-        stnLayer.addTo(map).bringToFront();
-      } else {
-        stnLayer && map.removeLayer(stnLayer);
-      }
-    });
-  
-    
-    // --- Build visual Leaflet layers for toggling ---
-    let layerWifi   = L.geoJSON(LAYERS.wifi,  { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}).bindPopup('Wi-Fi building') });
-    let layerPlay   = L.geoJSON(LAYERS.amenities, { pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.7}).bindPopup('Amenity') });
-    let layerRoads  = L.geoJSON(LAYERS.roads, { style:()=>({color:'#a16d00', weight:1}) });
-    let layerBldg   = L.geoJSON(LAYERS.bldgPolys, { style:()=>({color:'#444', weight:0.8, fillColor:'#bbb', fillOpacity:0.3}) });
-    let layerPEMU   = L.geoJSON(LAYERS.pemu, { style:()=>({color:'#6a0080', weight:1.2, fillColor:'#dcb6ef', fillOpacity:0.25}) })
-                        .bindTooltip('Priority Env. Mgmt Unit');
-    let layerLand   = L.geoJSON(LAYERS.land, {
-      style: f => {
-        // tint by land-use score (not used for MCDA color—just a display layer)
-        const {score} = landUseScoreAndLabel(f.properties||{});
-        const t = (score - 0.4) / (0.9 - 0.4);
-        return { color:'#666', weight:0.5, fillColor:`hsl(${210-160*Math.max(0,Math.min(1,t))},60%,70%)`, fillOpacity:0.35 };
-      },
-      onEachFeature: (f, lyr) => {
-        const det = landUseScoreAndLabel(f.properties||{});
-        lyr.bindPopup(`<b>Land-use</b>: ${det.label}<br><b>Score:</b> ${det.score}`);
-      }
-    });
-    
-    // keep refs so toggles can access them
-    window._overlayLayers = { layerWifi, layerPlay, layerRoads, layerBldg, layerPEMU, layerLand };
+    bindToggle('toggleWifi',   overlay.layerWifi);
+    bindToggle('togglePlay',   overlay.layerPlay);
+    bindToggle('toggleRoads',  overlay.layerRoads);
+    bindToggle('toggleBldg',   overlay.layerBldg);
+    bindToggle('togglePEMU',   overlay.layerPEMU);
+    bindToggle('toggleLand',   overlay.layerLand);
 
-    
-    // wire overlay toggles
+    // PurpleAir toggle
     ui.togglePA.addEventListener('change', async (e) => {
       if (e.target.checked) {
         if (!paLayer) paLayer = await buildExternalPointsLayer(LAYER_URLS.purpleair, { color:'#7a1fa2', label:'PurpleAir' });
@@ -354,16 +347,12 @@ async function init(){
         paLayer && map.removeLayer(paLayer);
       }
     });
+
+    // Stations toggle (from data.js)
     ui.toggleStations.addEventListener('change', async (e) => {
       if (e.target.checked) {
-        if (!stnLayer) {
-          if (!LAYER_URLS.stations) {
-            alert('Set LAYER_URLS.stations to your stations JSON/GeoJSON URL.');
-            e.target.checked = false; return;
-          }
-          stnLayer = await buildExternalPointsLayer(LAYER_URLS.stations, { color:'#0b62a4', label:'Station' });
-        }
-        stnLayer && stnLayer.addTo(map).bringToFront();
+        if (!stnLayer) stnLayer = await buildStationsLayer();
+        stnLayer.addTo(map).bringToFront();
       } else {
         stnLayer && map.removeLayer(stnLayer);
       }
@@ -376,69 +365,43 @@ async function init(){
   }
 }
 
-/* -------------- Build external points layer (robust parser) ------- */
+/* -------------- Build external points layer (for PurpleAir) ------- */
 async function buildExternalPointsLayer(url, style={}) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
-
-    // try JSON parse
-    let json;
-    try { json = JSON.parse(text); }
-    catch { throw new Error('Invalid JSON'); }
+    let json; try { json = JSON.parse(text); } catch { throw new Error('Invalid JSON'); }
 
     let fc = null;
+    if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) fc = json;
+    else if (Array.isArray(json)) fc = arrayToFeatureCollection(json);
+    else if (json && json.data && Array.isArray(json.data)) fc = arrayToFeatureCollection(json.data);
+    else if (json && json.features) fc = { type:'FeatureCollection', features: json.features };
+    else fc = arrayToFeatureCollection(Object.values(json));
 
-    // If already GeoJSON FeatureCollection
-    if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
-      fc = json;
-    } else if (Array.isArray(json)) {
-      fc = arrayToFeatureCollection(json);
-    } else if (json && json.data && Array.isArray(json.data)) {
-      fc = arrayToFeatureCollection(json.data);
-    } else if (json && json.features) {
-      fc = { type:'FeatureCollection', features: json.features };
-    } else {
-      // last resort: try to detect single-object map
-      fc = arrayToFeatureCollection(Object.values(json));
-    }
-
-    const layer = L.geoJSON(fc, {
+    return L.geoJSON(fc, {
       pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-        radius: 4,
-        weight: 1.5,
-        color: style.color || '#333',
-        fillColor: '#fff',
-        fillOpacity: 1
+        radius: 4, weight: 1.5, color: style.color || '#333', fillColor: '#fff', fillOpacity: 1
       }).bindTooltip(f.properties && (f.properties.name || f.properties.label || f.properties.id || style.label) || style.label || '', {direction:'top', offset:[0,-6]})
     });
-
-    return layer;
   } catch (err) {
-    console.error('Failed to build points layer for', url, err);
+    console.error('Failed to load', style.label||'layer', err);
     alert(`Failed to load ${style.label||'layer'}: ${err.message}`);
     return null;
   }
 }
-
-// Convert array of rows with lat/lon-ish keys to FeatureCollection
 function arrayToFeatureCollection(arr) {
   const latKeys = ['lat','latitude','Latitude','LAT','Lat'];
   const lonKeys = ['lon','lng','long','longitude','Longitude','LON','Lng'];
   const nameKeys = ['name','Name','label','Label','station','Station','title','Title','id','ID'];
-
   const feats = [];
   for (const row of arr) {
     const latK = latKeys.find(k => k in row);
     const lonK = lonKeys.find(k => k in row);
     if (!latK || !lonK) continue;
     const nameK = nameKeys.find(k => k in row);
-    feats.push({
-      type:'Feature',
-      properties: { ...(row||{}), name: nameK ? row[nameK] : undefined },
-      geometry: { type:'Point', coordinates:[ +row[lonK], +row[latK] ] }
-    });
+    feats.push({ type:'Feature', properties:{...(row||{}), name: nameK ? row[nameK] : undefined}, geometry:{ type:'Point', coordinates:[+row[lonK], +row[latK]] }});
   }
   return { type:'FeatureCollection', features:feats };
 }
@@ -448,13 +411,9 @@ function recompute(){
   if (!LAYERS.land) { ui.status.innerHTML = '<span class="warn">Data not loaded yet…</span>'; return; }
   ui.status.innerHTML = '<span class="muted">Computing…</span>';
 
-  // connect to toggles (keep default checked)
-  const toggleHex = document.getElementById('toggleHex');
-  const toggleTop = document.getElementById('toggleTop');
-  if (toggleHex && !toggleHex.checked) map.removeLayer(hexLayer);
-  if (toggleTop && !toggleTop.checked) map.removeLayer(topLayer);
-  if (toggleHex) toggleHex.onchange = e => e.target.checked ? hexLayer.addTo(map) : map.removeLayer(hexLayer);
-  if (toggleTop) toggleTop.onchange = e => e.target.checked ? topLayer.addTo(map).bringToFront() : map.removeLayer(topLayer);
+  // Optional: honor toggles after layers are created
+  if (hexLayer && ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
+  if (topLayer && ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
 
   const cellKm = +ui.cellkm.value;
   const dMax   = +ui.dmax.value;
@@ -462,22 +421,20 @@ function recompute(){
   const roadsPref = ui.roadsPref.value;
   const excludePEMU = ui.excludePEMU.checked;
 
-  // Weights normalized
-  let w = {
-    wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value, lu:+ui.w_lu.value, bld:+ui.w_bld.value
-  };
+  // weights normalized
+  let w = { wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value, lu:+ui.w_lu.value, bld:+ui.w_bld.value };
   const sum = Object.values(w).reduce((a,b)=>a+b,0) || 1;
   Object.keys(w).forEach(k => w[k]=w[k]/sum);
 
   const { wifi, amenities, bldgCentroids, roads, pemu, land } = LAYERS;
 
-  // Hex grid over land-use bbox
+  // hex grid over land-use bbox
   const bbox = turf.bbox(land);
   const hex = turf.hexGrid(bbox, cellKm, { units:'kilometers' });
 
-  // For each hex center compute criteria
   const raw = [];
   let maxBldDen = 0;
+
   for (const cell of hex.features) {
     const center = turf.centerOfMass(cell);
 
@@ -489,17 +446,16 @@ function recompute(){
     const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length;
     if (dens > maxBldDen) maxBldDen = dens;
 
-    // was: const lu = landUseAtPoint(center, land);
     const luDet = landUseAtPointWithDetails(center, land);
-    raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore: luDet.score, luLabel: luDet.label, allowed });
 
+    // constraint FIRST
     let allowed = 1;
     if (excludePEMU && pointInAnyPolygon(center, pemu)) allowed = 0;
 
-    raw.push({ cell, center, dWifi, dAmen, dRoad, dens, lu, allowed });
+    raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore: luDet.score, luLabel: luDet.label, allowed });
   }
 
-  // Scale 0–1 and combine
+  // scale & combine
   const denMax = Math.max(1, maxBldDen);
   for (const r of raw) {
     const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);
@@ -508,7 +464,7 @@ function recompute(){
     const s_road = (roadsPref === 'closer') ? clamp(1 - (r.dRoad / dMax),0,1)
                                             : clamp(  (r.dRoad / dMax),0,1);
     const s_bld  = clamp(r.dens / denMax, 0, 1);
-    const s_lu = clamp(r.luScore, 0, 1);
+    const s_lu   = clamp(r.luScore, 0, 1);
 
     r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road + w.lu*s_lu + w.bld*s_bld;
     r.score    = r.scoreRaw * r.allowed;
@@ -521,15 +477,12 @@ function recompute(){
     return `hsl(${200 - 160*t}, ${30 + 40*t}%, ${85 - 45*t}%)`;
   }
 
-  // Paint hexes (include lu for popup)
+  // paint hexes
   hex.features.forEach((f,i)=>{
     const r = raw[i];
-    f.properties = {
-      score:+r.score.toFixed(3),
-      lu_score:+r.luScore.toFixed(2),
-      lu_label:r.luLabel
-    };
+    f.properties = { score:+r.score.toFixed(3), lu_score:+r.luScore.toFixed(2), lu_label:r.luLabel };
   });
+  if (hexLayer) map.removeLayer(hexLayer);
   hexLayer = L.geoJSON(hex, {
     style: f => ({ color:'#aaa', weight:0.4, fillColor:colorFor(f.properties.score), fillOpacity:0.78 }),
     onEachFeature:(f,lyr)=>{
@@ -538,20 +491,20 @@ function recompute(){
       lyr.on('click', () => { ui.lu_readout.textContent = `${p.lu_label} (${p.lu_score})`; });
     }
   }).addTo(map);
+  if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
 
-  // Top 10
+  // top 10
   const sorted = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
-  const topFC = { type:'FeatureCollection', features: sorted.map(r=>({
-    type:'Feature', properties:{score:+r.score.toFixed(3)}, geometry:r.center.geometry
-  }))};
+  const topFC = { type:'FeatureCollection', features: sorted.map(r=>({ type:'Feature', properties:{score:+r.score.toFixed(3)}, geometry:r.center.geometry }))};
+  if (topLayer) map.removeLayer(topLayer);
   topLayer = L.geoJSON(topFC, {
     pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:6,weight:2,color:'#fe0002',fillColor:'#fff',fillOpacity:1})
       .bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
   }).addTo(map);
   topLayer.bringToFront();
+  if (ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
 
   ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
-  // reset footer on recompute
   ui.lu_readout.textContent = '—';
 }
 
@@ -583,42 +536,11 @@ function distanceToRoadsKm(pt, fc){
   }
   return min;
 }
-function landUseAtPoint(pt, polysFC){
-  for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt, f)) return landUseScore(f.properties||{});
-  if (!polysFC.features.length) return 0.5;
-  let best = 0.5, min = Infinity;
-  for (const f of polysFC.features) {
-    const d = turf.distance(pt, turf.centroid(f), {units:'kilometers'});
-    if (d < min) { min = d; best = landUseScore(f.properties||{}); }
-  }
-  return best;
-}
 function pointInAnyPolygon(pt, polysFC){ for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt, f)) return true; return false; }
 
 /* --------------------------- WIRE UP ------------------------------- */
 ui.runBtn.addEventListener('click', recompute);
 init();
-
-// helper to wire a checkbox to a layer
-function bindToggle(id, layer){
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.addEventListener('change', e => {
-    if (e.target.checked) { layer.addTo(map); layer.bringToFront?.(); }
-    else { map.removeLayer(layer); }
-  });
-}
-bindToggle('toggleWifi',   window._overlayLayers.layerWifi);
-bindToggle('togglePlay',   window._overlayLayers.layerPlay);
-bindToggle('toggleRoads',  window._overlayLayers.layerRoads);
-bindToggle('toggleBldg',   window._overlayLayers.layerBldg);
-bindToggle('togglePEMU',   window._overlayLayers.layerPEMU);
-bindToggle('toggleLand',   window._overlayLayers.layerLand);
-
-// Existing PurpleAir / Stations toggles already wired below in your code
-
-
-  
 </script>
 </body>
 </html>
