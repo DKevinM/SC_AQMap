@@ -1,3 +1,15 @@
+window.addEventListener('load', () => {
+  // bail if map wasn't created for some reason
+  if (!window.map) {
+    console.error('map is not defined yet');
+    return;
+  }
+
+  // ensure layersControl exists (create a minimal one if you’re not using it elsewhere)
+  if (!window.layersControl) {
+    window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
+  }
+
 const NPRI_WMS = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
 
 const npriFacilitiesWMS = L.tileLayer.wms(NPRI_WMS, {
@@ -43,3 +55,5 @@ function addNpriFacilitiesStrathcona() {
 
 // call it after map + layersControl exist:
 addNpriFacilitiesStrathcona();
+  
+});
