@@ -399,12 +399,40 @@ window.addEventListener('DOMContentLoaded', () => {
       transparent: true,
       opacity: 0.9,
       attribution: 'NPRI © ECCC'
-    });
-    
-    
+    });    
     // Wire the toggles
     bindToggle(ui.toggleNPRIwms, npriFacilitiesWMS);
 
+    // NPRI facility labels (hover-only)
+    npriFacilityLabels = L.esri.featureLayer({
+      url: 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0', // facilities
+      pane: 'markers',
+      // invisible-ish hit target so hover works even with WMS underneath
+      pointToLayer: (geojson, latlng) =>
+        L.circleMarker(latlng, {
+          radius: 7,          // decent hover target
+          color: '#000',      // stroke off; we just need a target
+          weight: 0,
+          opacity: 0,         // no visible stroke
+          fillColor: '#000',
+          fillOpacity: 0.001  // almost invisible but still receives pointer events
+        }),
+      onEachFeature: (feature, layer) => {
+        const p = feature.properties || {};
+        const name = p.FacilityName || p.Facility || 'Facility';
+        layer.bindTooltip(name, {
+          permanent: false,          // <-- hover only
+          sticky: true,              // follows cursor a bit
+          direction: 'right',
+          offset: [6, 0],
+          className: 'npri-label'
+        });
+      }
+    });
+    
+    // wire your existing checkbox
+    bindToggle(ui.toggleNPRILabels, npriFacilityLabels);
+    
   }
 
   /* --------------------------- SCORING ------------------------------ */
