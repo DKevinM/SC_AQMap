@@ -5,9 +5,9 @@
   <title>Rapid Suitability (MCDA-lite) — Strathcona County</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" defer></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <style>
     :root { --panel-w: 320px; --fs: 11px; }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto; font-size:var(--fs); }
@@ -104,6 +104,8 @@
         <label><input type="checkbox" id="toggleBldg"> Building footprints</label>
         <label><input type="checkbox" id="togglePEMU"> Priority Env. Mgmt Units</label>
         <label><input type="checkbox" id="toggleLand"> Land-use polygons</label>
+        <label><input type="checkbox" id="toggleNPRIwms"> NPRI — Facilities (WMS)</label>
+        <label><input type="checkbox" id="toggleNPRICAC"> NPRI — CAC (2023)</label>
         <label><input type="checkbox" id="togglePA"> PurpleAir sensors</label>
         <label><input type="checkbox" id="toggleStations"> AQ stations</label>
       </div>
@@ -202,6 +204,8 @@ window.addEventListener('DOMContentLoaded', () => {
     toggleBldg: toggleBldg,
     togglePEMU: togglePEMU,
     toggleLand: toggleLand,
+    toggleNPRIwms: toggleNPRIwms,
+    toggleNPRICAC: toggleNPRICAC,
     runBtn: runBtn,
     status: status,
     lu_readout: lu_readout
@@ -277,6 +281,7 @@ window.addEventListener('DOMContentLoaded', () => {
   let LAYERS = {};
   let hexLayer=null, topLayer=null;
   let paLayer=null, stnLayer=null;
+  let npriFacilitiesWMS = null, npriCAC = null;
   const colorForAQHI = a => (isNaN(+a)?'#666':(+a<=3?'#2ca25f':+a<=6?'#ffb000':+a<=10?'#d73027':'#7a1fa2'));
 
   async function buildStationsLayer() {
@@ -386,6 +391,36 @@ window.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
+    // --- NPRI layers ---
+    const NPRI_WMS = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
+    
+    // Facilities locations as WMS (WMS layer index = 5)
+    npriFacilitiesWMS = L.tileLayer.wms(NPRI_WMS, {
+      layers: '5',
+      format: 'image/png',
+      transparent: true,
+      opacity: 0.9,
+      attribution: 'NPRI © ECCC'
+    });
+    
+    // CAC totals (REST layer id = 1)
+    npriCAC = L.esri.featureLayer({
+      url: 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/1',
+      pointToLayer: (geojson, latlng) =>
+        L.circleMarker(latlng, { radius: 5, weight: 1, fillOpacity: 0.8 })
+    }).bindPopup(layer => {
+      const p = layer.feature.properties || {};
+      return `
+        <strong>${p.FacilityName || 'Facility'}</strong><br/>
+        Total CAC (air): ${p.TotalRelease ?? 'n/a'}<br/>
+        Year: ${p.ReportingYear ?? '2023'}
+      `;
+    });
+    
+    // Wire the toggles
+    bindToggle(ui.toggleNPRIwms, npriFacilitiesWMS);
+    bindToggle(ui.toggleNPRICAC, npriCAC);
+
   }
 
   /* --------------------------- SCORING ------------------------------ */
