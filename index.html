@@ -33,6 +33,15 @@
     /* tighter layers list */
     .layers-list label { display:block; margin:0; line-height:1.2; }
     .layers-list label + label { margin-top:2px; }
+
+    .npri-label{
+      background: rgba(255,255,255,0.9);
+      padding: 1px 3px;
+      border: 1px solid #bbb;
+      border-radius: 3px;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.05);
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
@@ -169,7 +178,10 @@ window.addEventListener('DOMContentLoaded', () => {
   /* -------- MAP (create ONCE) -------- */
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
-
+  
+  // after your tile layer is added
+  window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
+  
   // Panes: tiles (200) < features (400) < suitability (410) < markers (420)
   map.createPane('features');    map.getPane('features').style.zIndex = 400;
   map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
