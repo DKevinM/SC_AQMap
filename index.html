@@ -5,6 +5,7 @@
   <title>Rapid Suitability (MCDA-lite) — Strathcona County</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="icon" href="data:,">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -235,6 +236,7 @@ window.addEventListener('DOMContentLoaded', () => {
     runBtn: runBtn,
     status: status,
     lu_readout: lu_readout
+    btnClear: btnClear,
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
@@ -352,13 +354,6 @@ window.addEventListener('DOMContentLoaded', () => {
       type:'Feature', properties:{...r}, geometry:{type:'Point',coordinates:[+r[lonK],+r[latK]]}
     })).filter(f=>isFinite(f.geometry.coordinates[0])&&isFinite(f.geometry.coordinates[1])) };
   }
-
-  const CENSUS_GJ_URL =
-    'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query' +
-    '?where=1%3D1' +
-    '&outFields=tot_pop,TOT_POP,Shape_Area,shape_area,EA_ID,EA_NAME' +
-    '&returnGeometry=true' +   // we need geometry to be robust on area
-    '&f=geojson';
 
   
     // for MCDA use across functions
@@ -581,58 +576,10 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.lu_readout.textContent = '—';
   }
 
-  btn?.addEventListener('click', async () => {
-    try {
-      const fc = await fetchAllArcGISGeoJSON(CENSUS_GJ_URL, 2000);
-  
-      const rows = (fc.features || [])
-        .map(f => {
-          const p = f.properties || {};
-          // area: prefer attribute (m²) then fall back to turf on geometry
-          let km2 = 0;
-          const m2Attr = Number(p.Shape_Area ?? p.shape_area ?? p.SHAPE__Area ?? p.SHAPE_Area);
-          if (Number.isFinite(m2Attr) && m2Attr > 0) {
-            km2 = m2Attr / 1e6;
-          } else if (f.geometry) {
-            try { const m2 = turf.area(f); km2 = m2 > 0 ? m2 / 1e6 : 0; } catch {}
-          }
-          const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
-          const d   = km2 > 0 ? (tot / km2) : 0;
-          return { _density: d, _pop_total: tot, _area_km2: km2, ...p };
-        })
-        .filter(r => Number.isFinite(r._density))
-        .sort((a,b) => (b._density || 0) - (a._density || 0))
-        .slice(0, 10);
-  
-      const header = [
-        '# Conditions',
-        '# dataset, 2018 Municipal Census — Enumeration Areas (Strathcona)',
-        '# metric, population density (people/km²) = tot_pop / (area_m² / 1e6)',
-        `# date_generated, ${new Date().toISOString()}`,
-        ''
-      ].join('\n');
-  
-      const cols = ['_density','_pop_total','_area_km2','tot_pop','Shape_Area','EA_ID','EA_NAME'];
-      const safe = v => (v == null ? '' : String(v).replace(/"/g,'""'));
-  
-      let csv = 'rank,' + cols.join(',') + '\n';
-      rows.forEach((p,i)=> { csv += [i+1].concat(cols.map(c=>safe(p[c]))).join(',') + '\n'; });
-  
-      const blob = new Blob([header + csv], { type:'text/csv;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'top10_census_density.csv';
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (err) {
-      console.error(err);
-      alert('Export failed: ' + (err.message || 'request error'));
-    }
-  });
-
 
   /* -------- wire up + go -------- */
   ui.runBtn.addEventListener('click', recompute);
+  ui.btnClear.addEventListener('click', clearResults);
   
   // PurpleAir toggle
   ui.togglePA.addEventListener('change', async (e) => {
