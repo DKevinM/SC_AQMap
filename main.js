@@ -32,18 +32,23 @@ window.addEventListener('load', () => {
     if (toggleWMS.checked) npriFacilitiesWMS.addTo(map);
   }
 
-  // Hover-only labels (vector; invisible markers that catch pointer events)
-  const npriFacilityLabels = L.esri.featureLayer({
+  // --- NPRI interactive (hover + click) vector overlay ---
+  const npriFacilityInteractive = L.esri.featureLayer({
     url: 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0',
-    pane: 'markers',
+    pane: 'markers',        // stays above WMS
+    simplifyFactor: 0.2,
+    precision: 7,
     pointToLayer: (_g, latlng) => L.circleMarker(latlng, {
-      radius: 7,
-      weight: 0,
+      radius: 6,            // bigger hit area for hover
+      weight: 0,            // invisible stroke
       opacity: 0,
-      fillOpacity: 0.001 // must be >0 so it receives mouse events
+      fillColor: '#000',
+      fillOpacity: 0.001    // nearly invisible but receives mouse events
     }),
     onEachFeature: (f, layer) => {
-      const name = f?.properties?.FacilityName || f?.properties?.Facility || 'Facility';
+      const p = f?.properties || {};
+      const name = p.FacilityName || p.Facility || 'NPRI facility';
+      // Hover tooltip
       layer.bindTooltip(name, {
         permanent: false,
         sticky: true,
@@ -51,9 +56,49 @@ window.addEventListener('load', () => {
         offset: [6, 0],
         className: 'npri-label'
       });
+      // Click popup (add/adjust fields as desired)
+      const city   = p.City || p.Municipality || '';
+      const prov   = p.Province || p.Prov || '';
+      const npriId = p.NPRI_ID || p.NPRIId || p.FacilityId || '';
+      const naics  = p.NAICS || p.NAICS_Code || '';
+      const owner  = p.Owner || p.CompanyName || '';
+  
+      layer.bindPopup(`
+        <div style="min-width:240px">
+          <b>${name}</b><br/>
+          ${city ? `${city}${prov ? ', '+prov : ''}<br/>` : ''}
+          ${owner ? `<div><small>Owner: ${owner}</small></div>` : ''}
+          <table style="width:100%;font-size:12px;margin-top:4px">
+            ${npriId ? `<tr><td style="color:#666">NPRI ID</td><td>${npriId}</td></tr>` : ''}
+            ${naics  ? `<tr><td style="color:#666">NAICS</td><td>${naics}</td></tr>` : ''}
+          </table>
+          <div style="margin-top:6px;color:#777"><small>Hover for name • Click for details</small></div>
+        </div>
+      `);
     }
   });
+  
+  // Keep the vector hover layer synced with the WMS checkbox
+  const wmsToggle = document.getElementById('toggleNPRIwms');
+  if (wmsToggle) {
+    const applyNPRIToggle = () => {
+        if (wmsToggle.checked) {
+          npriFacilitiesWMS.addTo(map);
+          npriFacilityInteractive.addTo(map);
+          npriFacilityInteractive.bringToFront?.();
+        } else {
+          map.removeLayer(npriFacilitiesWMS);
+          if (map.hasLayer(npriFacilityInteractive)) map.removeLayer(npriFacilityInteractive);
+        }
+      };
+      // rewire change to also control the interactive layer
+      wmsToggle.removeEventListener?.('_npriSync', applyNPRIToggle); // guard if reloaded
+      wmsToggle.addEventListener('change', applyNPRIToggle);
+      // run once on load
+      applyNPRIToggle();
+    }
 
+  
   // Single, canonical versions of these helpers (no duplicates!)
   function enableLabels() {
     if (npriFacilityLabels && !map.hasLayer(npriFacilityLabels)) {
