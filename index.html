@@ -282,6 +282,14 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   function pointInAnyPolygon(pt, polysFC){ for (const f of polysFC.features) if (turf.booleanPointInPolygon(pt,f)) return true; return false; }
 
+  function clearResults() {
+    if (hexLayer && window.map.hasLayer(hexLayer)) window.map.removeLayer(hexLayer);
+    if (topLayer && window.map.hasLayer(topLayer)) window.map.removeLayer(topLayer);
+    hexLayer = null;
+    topLayer = null;
+    ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
+  }
+  
   function landUseScoreAndLabel(props){
     const raw = (props.ZONE||props.DISTRICT||props.LAND_USE||props.LANDUSE||props.Zoning||'').toString();
     const lut = [
