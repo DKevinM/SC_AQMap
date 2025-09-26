@@ -60,6 +60,11 @@
         <option value="background">Background/Regional (farther from amenities)</option>
       </select>
     </div>
+    
+    <div class="row"><span class="small" style="width:110px">Pop. density</span>
+      <input type="range" id="w_pop" min="0" max="1" step="0.05" value="0.15">
+      <span id="w_pop_val" class="badge">0.15</span>
+    </div>
 
     <div class="group">
       <label>Roads preference</label>
@@ -207,6 +212,7 @@ window.addEventListener('DOMContentLoaded', () => {
     w_road: w_road, w_road_val: w_road_val,
     w_lu: w_lu, w_lu_val: w_lu_val,
     w_bld: w_bld, w_bld_val: w_bld_val,
+    w_pop: w_pop, w_pop_val: w_pop_val,
     excludePEMU: excludePEMU,
     togglePA: togglePA,
     toggleStations: toggleStations,
@@ -227,7 +233,7 @@ window.addEventListener('DOMContentLoaded', () => {
     lu_readout: lu_readout
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
-  [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
+  [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
 
   /* -------- helpers -------- */
   async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
@@ -295,6 +301,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   /* -------- state -------- */
   let LAYERS = {};
+  let appReady = false;
   let hexLayer=null, topLayer=null;
   let paLayer=null, stnLayer=null;
   let npriFacilitiesWMS = null;
@@ -334,6 +341,10 @@ window.addEventListener('DOMContentLoaded', () => {
     })).filter(f=>isFinite(f.geometry.coordinates[0])&&isFinite(f.geometry.coordinates[1])) };
   }
 
+    // for MCDA use across functions
+  let CENSUS_FC = null;
+  let CENSUS_MIN = 0, CENSUS_MAX = 1;
+  
   /* -------- init: fetch data for MCDA + build overlays -------- */
   async function init(){
     try {
@@ -377,6 +388,54 @@ window.addEventListener('DOMContentLoaded', () => {
         onEachFeature:(f,lyr)=>{ const det=landUseScoreAndLabel(f.properties||{}); lyr.bindPopup(`<b>Land-use</b>: ${det.label}<br><b>Score:</b> ${det.score}`); }
       });
 
+
+      // Pull EAs once for MCDA, with geometry (paginate to be safe)
+      async function queryAllCensus(returnGeom = true) {
+        const url = 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0';
+        const pageSize = 2000; let offset = 0;
+        const out = { type:'FeatureCollection', features: [] };
+        while (true) {
+          const q = L.esri.query({ url })
+            .where('1=1').fields(['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID'])
+            .orderBy('OBJECTID','ASC').limit(pageSize).offset(offset)
+            .returnGeometry(returnGeom);
+          const fc = await new Promise((res,rej)=>q.run((e,r)=>e?rej(e):res(r)));
+          const feats = fc?.features || [];
+          out.features.push(...feats);
+          if (feats.length < pageSize) break;
+          offset += feats.length; if (offset > 1_000_000) break;
+        }
+        return out;
+      }
+      
+      try {
+        const fc = await queryAllCensus(true);
+        // compute density per feature & keep a tight FC for point lookups
+        const feats = (fc.features||[]).filter(f=>f && f.geometry && f.properties);
+        const densVals = [];
+        feats.forEach(f=>{
+          const p=f.properties;
+          const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
+          const km2 = (function(){
+            const m2Attr = Number(p.Shape_Area ?? p.shape_area ?? p.SHAPE__Area ?? p.SHAPE_Area);
+            if (Number.isFinite(m2Attr) && m2Attr>0) return m2Attr/1e6;
+            try { const m2=turf.area(f); return m2>0?m2/1e6:0; } catch { return 0; }
+          })();
+          const d = km2>0 ? (tot/km2) : 0;
+          p._density = d;
+          if (Number.isFinite(d)) densVals.push(d);
+        });
+        if (densVals.length) {
+          CENSUS_MIN = Math.min(...densVals);
+          CENSUS_MAX = Math.max(...densVals);
+        }
+        CENSUS_FC = { type:'FeatureCollection', features: feats };
+      } catch(e) {
+        console.warn('Census FC for MCDA failed; pop-density weight will act as neutral.', e);
+      }
+
+
+      
       // Streaming Esri overlays (constant style)
       const roadsFL = L.esri.featureLayer({
         url:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0',
@@ -403,66 +462,40 @@ window.addEventListener('DOMContentLoaded', () => {
       bindToggle(ui.toggleBldg,   bldgFL);
 
       ui.status.textContent = 'Ready. Click Recompute.';
+      appReady = true;
+      
     } catch(e){
       console.error(e);
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
-    // --- NPRI layers ---
-    const NPRI_WMS = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
-    
-    // Facilities locations as WMS (WMS layer index = 5)
-    npriFacilitiesWMS = L.tileLayer.wms(NPRI_WMS, {
-      layers: '5',
-      format: 'image/png',
-      transparent: true,
-      opacity: 0.9,
-      attribution: 'NPRI © ECCC'
-    });    
-    // Wire the toggles
-    bindToggle(ui.toggleNPRIwms, npriFacilitiesWMS);
-
-    // NPRI facility labels (hover-only)
-    npriFacilityLabels = L.esri.featureLayer({
-      url: 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0', // facilities
-      pane: 'markers',
-      // invisible-ish hit target so hover works even with WMS underneath
-      pointToLayer: (geojson, latlng) =>
-        L.circleMarker(latlng, {
-          radius: 7,          // decent hover target
-          color: '#000',      // stroke off; we just need a target
-          weight: 0,
-          opacity: 0,         // no visible stroke
-          fillColor: '#000',
-          fillOpacity: 0.001  // almost invisible but still receives pointer events
-        }),
-      onEachFeature: (feature, layer) => {
-        const p = feature.properties || {};
-        const name = p.FacilityName || p.Facility || 'Facility';
-        layer.bindTooltip(name, {
-          permanent: false,          // <-- hover only
-          sticky: true,              // follows cursor a bit
-          direction: 'right',
-          offset: [6, 0],
-          className: 'npri-label'
-        });
-      }
-    });
-    
-    // wire your existing checkbox
-    bindToggle(ui.toggleNPRILabels, npriFacilityLabels);
     
   }
 
+  function popDensityAtPoint(pt, censusFC){
+    if (!censusFC || !censusFC.features?.length) return null;
+    for (const f of censusFC.features) {
+      try { if (turf.booleanPointInPolygon(pt, f)) return Number(f.properties?._density) || 0; }
+      catch {}
+    }
+    return null; // if not found, treat as neutral later
+  }
+  
   /* --------------------------- SCORING ------------------------------ */
   function recompute(){
+    if (!appReady) { ui.status.innerHTML = '<span class="warn">Still loading…</span>'; return; }
     if (!LAYERS.land) { ui.status.innerHTML='<span class="warn">Data not loaded yet…</span>'; return; }
     ui.status.innerHTML='<span class="muted">Computing…</span>';
 
     const cellKm = +ui.cellkm.value, dMax = +ui.dmax.value;
     const mode = ui.mode.value, roadsPref = ui.roadsPref.value, excludePEMU = ui.excludePEMU.checked;
 
-    let w = { wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value, lu:+ui.w_lu.value, bld:+ui.w_bld.value };
-    const s = Object.values(w).reduce((a,b)=>a+b,0)||1; Object.keys(w).forEach(k=>w[k]=w[k]/s);
+    let w = {
+      wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value,
+      lu:+ui.w_lu.value, bld:+ui.w_bld.value, pop:+ui.w_pop.value
+    };
+    const s = Object.values(w).reduce((a,b)=>a+b,0)||1;
+    Object.keys(w).forEach(k=>w[k]=w[k]/s);
+
 
     const { wifi, amenities, bldgCentroids, roads, pemu, land } = LAYERS;
     const bbox = turf.bbox(land);
@@ -477,8 +510,9 @@ window.addEventListener('DOMContentLoaded', () => {
       const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
+      const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
       const allowed = excludePEMU && pointInAnyPolygon(center, pemu) ? 0 : 1;
-      raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore:luDet.score, luLabel:luDet.label, allowed });
+      raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore:luDet.score, luLabel:luDet.label, pd, allowed });
     }
 
     const denMax = Math.max(1,maxBldDen);
@@ -488,10 +522,18 @@ window.addEventListener('DOMContentLoaded', () => {
       const s_road = (roadsPref==='closer') ? clamp(1 - (r.dRoad/dMax),0,1) : clamp((r.dRoad/dMax),0,1);
       const s_bld  = clamp(r.dens/denMax,0,1);
       const s_lu   = clamp(r.luScore,0,1);
-      r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road + w.lu*s_lu + w.bld*s_bld;
+      let s_pop;
+      if (r.pd == null || !isFinite(r.pd) || CENSUS_MAX <= CENSUS_MIN) {
+        s_pop = 0.5;
+      } else {
+        const t = (r.pd - CENSUS_MIN) / (CENSUS_MAX - CENSUS_MIN);
+        s_pop = (mode === 'exposure') ? t : (1 - t);
+      }
+      r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road + w.lu*s_lu + w.bld*s_bld + w.pop*s_pop;
       r.score    = r.scoreRaw * r.allowed;
     }
 
+    
     const minS = Math.min(...raw.map(r=>r.score)), maxS = Math.max(...raw.map(r=>r.score));
     const colorFor=s=>{ const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
 
