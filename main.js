@@ -98,28 +98,7 @@ window.addEventListener('load', () => {
       applyNPRIToggle();
     }
 
-  
-  // Single, canonical versions of these helpers (no duplicates!)
-  function enableLabels() {
-    if (npriFacilityLabels && !map.hasLayer(npriFacilityLabels)) {
-      npriFacilityLabels.addTo(map);
-    }
-    npriFacilityLabels?.bringToFront?.();
-  }
-  function disableLabels() {
-    if (npriFacilityLabels && map.hasLayer(npriFacilityLabels)) {
-      map.removeLayer(npriFacilityLabels);
-    }
-  }
 
-  const toggleLabels = document.getElementById('toggleNPRILabels');
-  if (toggleLabels) {
-    toggleLabels.addEventListener('change', e => e.target.checked ? enableLabels() : disableLabels());
-    if (toggleLabels.checked) enableLabels();
-  } else {
-    // no checkbox: default on
-    enableLabels();
-  }
 
   /* ============== 2018 Census density (OFF by default) ============== */
 
