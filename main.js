@@ -90,6 +90,14 @@ window.addEventListener('load', () => {
     }
   }
 
+  function computeQuantileBreaks(vals){
+    if (!vals.length) return null;
+    vals.sort((a,b)=>a-b);
+    const q = p => vals[Math.floor((vals.length-1)*p)];
+    return [q(0.10), q(0.30), q(0.50), q(0.70), q(0.90)];
+  }
+
+
   function densityFromFeature(feature) {
     const p = feature.properties || {};
     const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
@@ -240,15 +248,70 @@ window.addEventListener('load', () => {
       /* stats already shows error, continue so toggle/export still work */
     }
 
-    toggle?.addEventListener('change', (e) => {
+    toggle?.addEventListener('change', async (e) => {
       if (e.target.checked) {
         const fl = createCensusFeatureLayer();
         fl.addTo(map);
         fl.bringToFront?.();
+    
+        // If stats failed (no breaks), build them from the features as they finish loading
+        if (!censusBreaks) {
+          const statsDiv = document.getElementById('censusStats');
+          if (statsDiv) statsDiv.textContent = 'Building legend from loaded features…';
+    
+          // Wait for one full load pass
+          fl.once('load', () => {
+            try {
+              const densities = [];
+              // Gather densities from rendered features
+              Object.values(fl._layers || {}).forEach(lyr => {
+                const ft = lyr?.feature; if (!ft) return;
+                const d = densityFromFeature(ft);
+                if (Number.isFinite(d)) densities.push(d);
+              });
+              const br = computeQuantileBreaks(densities);
+              if (br) {
+                censusBreaks = br;
+                // Refresh style now that we have breaks
+                fl.setStyle(feature => {
+                  const d = densityFromFeature(feature);
+                  return { color:'#555', weight:0.6, fillColor: colorForDensity(d), fillOpacity:0.65 };
+                });
+    
+                // Minimal legend
+                const fmt0 = n => Number.isFinite(n) ? n.toFixed(0) : '—';
+                if (statsDiv) {
+                  statsDiv.innerHTML = `
+                    <div><b>Legend (people/km²)</b></div>
+                    <div style="display:grid;grid-template-columns:16px 1fr;gap:6px 8px;align-items:center;margin-top:4px">
+                      ${[0,1,2,3,4,5].map(i=>{
+                        const lab = [
+                          `≤ ${fmt0(censusBreaks[0])}`,
+                          `${fmt0(censusBreaks[0])}–${fmt0(censusBreaks[1])}`,
+                          `${fmt0(censusBreaks[1])}–${fmt0(censusBreaks[2])}`,
+                          `${fmt0(censusBreaks[2])}–${fmt0(censusBreaks[3])}`,
+                          `${fmt0(censusBreaks[3])}–${fmt0(censusBreaks[4])}`,
+                          `> ${fmt0(censusBreaks[4])}`
+                        ][i];
+                        return `<span style="width:16px;height:12px;border:1px solid #555;background:${censusColors[i]}"></span><span>${lab}</span>`;
+                      }).join('')}
+                    </div>`;
+                }
+              } else if (statsDiv) {
+                statsDiv.textContent = 'No features available to build legend.';
+              }
+            } catch (err) {
+              console.error(err);
+              const statsDiv = document.getElementById('censusStats');
+              if (statsDiv) statsDiv.textContent = 'Legend build failed.';
+            }
+          });
+        }
       } else if (censusFL) {
         map.removeLayer(censusFL);
       }
     });
+
 
     // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
