@@ -33,21 +33,18 @@ const shortLookup = {
 };
 
 
-// --- CONFIG: 2018 Strathcona enumeration areas (GeoJSON) ---
 if (!window.CONFIG) window.CONFIG = {};
 Object.assign(window.CONFIG, {
   censusEA: {
-    url: "https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson",
-    // optional: filter to a bbox if you want only Strathcona (leave null to take all)
-    bbox: null, // e.g., [-113.5, 53.3, -112.9, 53.8]
+    base: "https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query",
+    bbox: null // optional client-side clip
   }
 });
 
-/** Fetch 2018 Census EA as GeoJSON and compute density (people/km²) */
+
 async function fetchCensusEAWithDensity() {
   const base = window.CONFIG.censusEA.base;
 
-  // Pull in chunks in case the layer is large
   const chunk = 2000;
   let offset = 0;
   let all = [];
@@ -62,30 +59,43 @@ async function fetchCensusEAWithDensity() {
     url.searchParams.set("returnExceededLimitFeatures", "true");
     url.searchParams.set("resultOffset", String(offset));
     url.searchParams.set("resultRecordCount", String(chunk));
+    // Useful for consistent pagination; harmless if field name differs
+    url.searchParams.set("orderByFields", "OBJECTID");
 
+    console.debug("[CENSUS] GET", url.toString());
     const resp = await fetch(url.toString(), { cache: "no-store" });
     const text = await resp.text();
 
     let gj;
-    try { gj = JSON.parse(text); }
-    catch { throw new Error("ArcGIS did not return JSON (got HTML or text)."); }
+    try {
+      gj = JSON.parse(text);
+    } catch (e) {
+      console.error("[CENSUS] Non-JSON response first 200 chars:", text.slice(0, 200));
+      throw new Error("ArcGIS did not return JSON");
+    }
 
-    if (gj.error) throw new Error(gj.error.message || "ArcGIS error");
-    if (gj.type !== "FeatureCollection") throw new Error("Not a GeoJSON FeatureCollection");
+    if (gj.error) {
+      console.error("[CENSUS] ArcGIS error:", gj.error);
+      throw new Error(gj.error.message || "ArcGIS error");
+    }
+    if (gj.type !== "FeatureCollection") {
+      console.error("[CENSUS] Unexpected payload type:", gj.type, "sample:", JSON.stringify(gj).slice(0, 200));
+      throw new Error("Not a GeoJSON FeatureCollection");
+    }
 
     const feats = Array.isArray(gj.features) ? gj.features : [];
     all = all.concat(feats);
 
-    if (feats.length < chunk) break; // done
+    if (feats.length < chunk) break;
     offset += feats.length;
-    if (offset > 1_000_000) break;   // safety cap
+    if (offset > 1_000_000) break; // safety
   }
 
-  // Compute density fields
+  // Compute density
   for (const f of all) {
     const p = f.properties || {};
     const tot = Number(p.tot_pop ?? p.TOT_POP ?? p.TOTAL_POP ?? 0);
-    const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0); // expected m²
+    const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0); // m²
     const km2 = m2 > 0 ? m2 / 1e6 : 0;
     p._pop_total = Number.isFinite(tot) ? tot : 0;
     p._area_km2  = Number.isFinite(km2) ? km2 : 0;
@@ -93,7 +103,7 @@ async function fetchCensusEAWithDensity() {
     f.properties = p;
   }
 
-  // Optional client-side bbox clip (fast vertex test)
+  // Optional clip to bbox (coarse vertex test)
   const bbox = window.CONFIG.censusEA.bbox;
   const features = (Array.isArray(bbox) && bbox.length === 4)
     ? all.filter(f => {
