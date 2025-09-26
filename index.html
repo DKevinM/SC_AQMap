@@ -54,6 +54,11 @@
     <div class="small">Hex-grid scoring from live ArcGIS GeoJSON. Adjust and click <b>Recompute</b>.</div>
 
     <div class="group">
+      <a id="btnClear" class="btn" style="background:#6c757d">Clear results</a>
+      <a id="btnReset" class="btn" style="background:#b23c3c">Reset all</a>
+    </div>
+
+    <div class="group">
       <label>Objective</label>
       <select id="mode">
         <option value="exposure">Population/Exposure (closer to amenities)</option>
@@ -567,14 +572,18 @@ window.addEventListener('DOMContentLoaded', () => {
   // PurpleAir toggle
   ui.togglePA.addEventListener('change', async e=>{
     if (e.target.checked){ if(!paLayer) paLayer = await buildExternalPointsLayer(LAYER_URLS.purpleair,{color:'#7a1fa2',label:'PurpleAir'});
-      paLayer && paLayer.addTo(map).bringToFront(); }
+      if (paLayer) { paLayer.addTo(map); paLayer.bringToFront?.(); }
     else { paLayer && map.removeLayer(paLayer); }
   });
 
   // Stations toggle (data.js)
   ui.toggleStations.addEventListener('change', async e=>{
-    if (e.target.checked){ if(!stnLayer) stnLayer = await buildStationsLayer(); stnLayer.addTo(map).bringToFront(); }
-    else { stnLayer && map.removeLayer(stnLayer); }
+    if (e.target.checked){
+      if (!stnLayer) stnLayer = await buildStationsLayer();
+      if (stnLayer) { stnLayer.addTo(map); stnLayer.bringToFront?.(); }
+    } else {
+      if (stnLayer) map.removeLayer(stnLayer);
+    }
   });
 
   init(); // load data, build display overlays, set Ready
