@@ -235,7 +235,7 @@ window.addEventListener('DOMContentLoaded', () => {
     toggleNPRIwms: toggleNPRIwms,
     runBtn: runBtn,
     status: status,
-    lu_readout: lu_readout
+    lu_readout: lu_readout,
     btnClear: btnClear,
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
