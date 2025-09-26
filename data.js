@@ -33,6 +33,7 @@ const shortLookup = {
 };
 
 
+// --- 2018 Census EA (Strathcona) ---
 if (!window.CONFIG) window.CONFIG = {};
 Object.assign(window.CONFIG, {
   censusEA: {
@@ -40,7 +41,6 @@ Object.assign(window.CONFIG, {
     bbox: null // optional client-side clip
   }
 });
-
 
 async function fetchCensusEAWithDensity() {
   const base = window.CONFIG.censusEA.base;
@@ -123,6 +123,7 @@ async function fetchCensusEAWithDensity() {
   return { type: "FeatureCollection", features };
 }
 window.fetchCensusEAWithDensity = fetchCensusEAWithDensity;
+
 
 /** Utility: download text as a file */
 function downloadText(filename, text) {
