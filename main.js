@@ -54,14 +54,26 @@ window.addEventListener('load', () => {
     }
   });
 
+  // Single, canonical versions of these helpers (no duplicates!)
+  function enableLabels() {
+    if (npriFacilityLabels && !map.hasLayer(npriFacilityLabels)) {
+      npriFacilityLabels.addTo(map);
+    }
+    npriFacilityLabels?.bringToFront?.();
+  }
+  function disableLabels() {
+    if (npriFacilityLabels && map.hasLayer(npriFacilityLabels)) {
+      map.removeLayer(npriFacilityLabels);
+    }
+  }
+
   const toggleLabels = document.getElementById('toggleNPRILabels');
-  const enableLabels = () => { if (!map.hasLayer(npriFacilityLabels)) npriFacilityLabels.addTo(map); npriFacilityLabels.bringToFront(); };
-  const disableLabels = () => { if (map.hasLayer(npriFacilityLabels)) map.removeLayer(npriFacilityLabels); };
   if (toggleLabels) {
     toggleLabels.addEventListener('change', e => e.target.checked ? enableLabels() : disableLabels());
     if (toggleLabels.checked) enableLabels();
   } else {
-    enableLabels(); // no checkbox: default on
+    // no checkbox: default on
+    enableLabels();
   }
 
   /* ============== 2018 Census density (OFF by default) ============== */
@@ -78,11 +90,9 @@ window.addEventListener('load', () => {
   // Compute area (km²) from feature geometry; fall back to attribute if present
   function areaKm2From(feature) {
     const p = feature.properties || {};
-    // attribute first if valid
     const m2Attr = Number(p.Shape_Area ?? p.shape_area ?? p.SHAPE__Area ?? p.SHAPE_Area);
     if (Number.isFinite(m2Attr) && m2Attr > 0) return m2Attr / 1e6;
 
-    // robust: compute from geometry
     try {
       const geo = feature.type ? feature : (feature.toGeoJSON ? feature.toGeoJSON() : null);
       if (!geo || !geo.geometry) return 0;
@@ -99,7 +109,6 @@ window.addEventListener('load', () => {
     const q = p => vals[Math.floor((vals.length-1)*p)];
     return [q(0.10), q(0.30), q(0.50), q(0.70), q(0.90)];
   }
-
 
   function densityFromFeature(feature) {
     const p = feature.properties || {};
@@ -161,18 +170,6 @@ window.addEventListener('load', () => {
     return out;
   }
 
-  function enableLabels() {
-    if (npriFacilityLabels && !map.hasLayer(npriFacilityLabels)) {
-      npriFacilityLabels.addTo(map);
-    }
-    npriFacilityLabels?.bringToFront?.();
-  }
-  function disableLabels() {
-    if (npriFacilityLabels && map.hasLayer(npriFacilityLabels)) {
-      map.removeLayer(npriFacilityLabels);
-    }
-  }
-  
   // Build quantile breaks + sidebar stats (no map layer needed)
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
@@ -268,17 +265,15 @@ window.addEventListener('load', () => {
         const fl = createCensusFeatureLayer();
         fl.addTo(map);
         fl.bringToFront?.();
-    
+
         // If stats failed (no breaks), build them from the features as they finish loading
         if (!censusBreaks) {
           const statsDiv = document.getElementById('censusStats');
           if (statsDiv) statsDiv.textContent = 'Building legend from loaded features…';
-    
-          // Wait for one full load pass
+
           fl.once('load', () => {
             try {
               const densities = [];
-              // Gather densities from rendered features
               Object.values(fl._layers || {}).forEach(lyr => {
                 const ft = lyr?.feature; if (!ft) return;
                 const d = densityFromFeature(ft);
@@ -287,13 +282,11 @@ window.addEventListener('load', () => {
               const br = computeQuantileBreaks(densities);
               if (br) {
                 censusBreaks = br;
-                // Refresh style now that we have breaks
                 fl.setStyle(feature => {
                   const d = densityFromFeature(feature);
                   return { color:'#555', weight:0.6, fillColor: colorForDensity(d), fillOpacity:0.65 };
                 });
-    
-                // Minimal legend
+
                 const fmt0 = n => Number.isFinite(n) ? n.toFixed(0) : '—';
                 if (statsDiv) {
                   statsDiv.innerHTML = `
@@ -326,7 +319,6 @@ window.addEventListener('load', () => {
         map.removeLayer(censusFL);
       }
     });
-
 
     // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
