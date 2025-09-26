@@ -45,17 +45,6 @@
   </style>
 </head>
 <body>
-
-<div id="ui" class="toolbar">
-  <label>
-    <input type="checkbox" id="toggle-census" checked />
-    Show 2018 Census density
-  </label>
-  <button id="btn-export-top10">Export Top 10</button>
-  <div style="font-size:12px;margin-top:6px;">
-    Metric: <code>population density (people / km²)</code>
-  </div>
-</div>
   
 <div id="app">
   <div id="map"></div>
@@ -130,6 +119,15 @@
         <label><input type="checkbox" id="toggleStations"> AQ stations</label>
       </div>
     </div>
+
+        <!-- 2018 Census density -->
+    <div class="group" id="censusUI">
+      <label><input type="checkbox" id="toggleCensus" checked> 2018 Census population density</label>
+      <div id="censusStats" class="small panel">Loading…</div>
+      <button id="btnExportCensusTop10" class="btn">Export Top 10</button>
+      <div class="small" style="margin-top:6px;">Metric: <code>density = tot_pop / (Shape_Area / 1e6)</code></div>
+    </div>
+
     
     <!-- Land-use score legend/explanation -->
     <div class="group small">
