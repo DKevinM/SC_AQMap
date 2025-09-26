@@ -1,7 +1,10 @@
 // main.js
 window.addEventListener('load', () => {
   const map = window.map;
-  if (!map) { console.error('Leaflet map not found'); return; }
+  if (!map || typeof map.addLayer !== 'function') {
+    console.warn('Leaflet map not ready in main.js');
+    return;
+  }
 
   // Optional: remove Leaflet's layer control if it exists
   if (window.layersControl?.remove) {
@@ -158,6 +161,18 @@ window.addEventListener('load', () => {
     return out;
   }
 
+  function enableLabels() {
+    if (npriFacilityLabels && !map.hasLayer(npriFacilityLabels)) {
+      npriFacilityLabels.addTo(map);
+    }
+    npriFacilityLabels?.bringToFront?.();
+  }
+  function disableLabels() {
+    if (npriFacilityLabels && map.hasLayer(npriFacilityLabels)) {
+      map.removeLayer(npriFacilityLabels);
+    }
+  }
+  
   // Build quantile breaks + sidebar stats (no map layer needed)
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
