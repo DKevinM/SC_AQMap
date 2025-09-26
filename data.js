@@ -43,47 +43,74 @@ Object.assign(window.CONFIG, {
   }
 });
 
-/** Fetch the 2018 Census EA GeoJSON and compute density (people/km^2) */
+/** Fetch 2018 Census EA as GeoJSON and compute density (people/km²) */
 async function fetchCensusEAWithDensity() {
-  const { url, bbox } = window.CONFIG.censusEA;
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`Census EA fetch failed: ${r.status}`);
-  const gj = await r.json();
+  const base = window.CONFIG.censusEA.base;
 
-  const features = (gj.features || []).filter(f => f && f.properties);
+  // Pull in chunks in case the layer is large
+  const chunk = 2000;
+  let offset = 0;
+  let all = [];
 
-  for (const f of features) {
-    const p = f.properties;
-    // Expect fields: tot_pop, Shape_Area (m^2 from source)
+  while (true) {
+    const url = new URL(base);
+    url.searchParams.set("where", "1=1");
+    url.searchParams.set("outFields", "*");
+    url.searchParams.set("returnGeometry", "true");
+    url.searchParams.set("outSR", "4326");
+    url.searchParams.set("f", "geojson");
+    url.searchParams.set("returnExceededLimitFeatures", "true");
+    url.searchParams.set("resultOffset", String(offset));
+    url.searchParams.set("resultRecordCount", String(chunk));
+
+    const resp = await fetch(url.toString(), { cache: "no-store" });
+    const text = await resp.text();
+
+    let gj;
+    try { gj = JSON.parse(text); }
+    catch { throw new Error("ArcGIS did not return JSON (got HTML or text)."); }
+
+    if (gj.error) throw new Error(gj.error.message || "ArcGIS error");
+    if (gj.type !== "FeatureCollection") throw new Error("Not a GeoJSON FeatureCollection");
+
+    const feats = Array.isArray(gj.features) ? gj.features : [];
+    all = all.concat(feats);
+
+    if (feats.length < chunk) break; // done
+    offset += feats.length;
+    if (offset > 1_000_000) break;   // safety cap
+  }
+
+  // Compute density fields
+  for (const f of all) {
+    const p = f.properties || {};
     const tot = Number(p.tot_pop ?? p.TOT_POP ?? p.TOTAL_POP ?? 0);
-    const area_m2 = Number(p.Shape_Area ?? p.shape_area ?? 0);
-    const km2 = area_m2 > 0 ? area_m2 / 1e6 : 0;
-    const dens = km2 > 0 ? tot / km2 : 0;
-    p._pop_total = isFinite(tot) ? tot : 0;
-    p._area_km2  = isFinite(km2) ? km2 : 0;
-    p._density   = isFinite(dens) ? dens : 0;
+    const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0); // expected m²
+    const km2 = m2 > 0 ? m2 / 1e6 : 0;
+    p._pop_total = Number.isFinite(tot) ? tot : 0;
+    p._area_km2  = Number.isFinite(km2) ? km2 : 0;
+    p._density   = km2 > 0 ? (tot / km2) : 0;
+    f.properties = p;
   }
 
-  // optional spatial clip to bbox (client-side; keep simple)
-  if (Array.isArray(bbox) && bbox.length === 4) {
-    const [xmin, ymin, xmax, ymax] = bbox;
-    gj.features = features.filter(f => {
-      const g = f.geometry;
-      if (!g) return false;
-      const coords = g.type === "Polygon" ? g.coordinates.flat(2) :
-                     g.type === "MultiPolygon" ? g.coordinates.flat(3) : [];
-      // keep any vertex within bbox (fast but coarse)
-      for (let i = 0; i < coords.length; i += 2) {
-        const x = coords[i], y = coords[i+1];
-        if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) return true;
-      }
-      return false;
-    });
-  } else {
-    gj.features = features;
-  }
+  // Optional client-side bbox clip (fast vertex test)
+  const bbox = window.CONFIG.censusEA.bbox;
+  const features = (Array.isArray(bbox) && bbox.length === 4)
+    ? all.filter(f => {
+        const g = f.geometry;
+        if (!g) return false;
+        const [xmin, ymin, xmax, ymax] = bbox;
+        const coords = g.type === "Polygon" ? g.coordinates.flat(2)
+                     : g.type === "MultiPolygon" ? g.coordinates.flat(3) : [];
+        for (let i = 0; i < coords.length; i += 2) {
+          const x = coords[i], y = coords[i+1];
+          if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) return true;
+        }
+        return false;
+      })
+    : all;
 
-  return gj;
+  return { type: "FeatureCollection", features };
 }
 window.fetchCensusEAWithDensity = fetchCensusEAWithDensity;
 
