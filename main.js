@@ -50,120 +50,172 @@ window.addEventListener('load', () => {
   });
 
 
-  // ===== 2018 Census density layer =====
-(async function addCensusDensityLayer() {
-  const { downloadText } = window;
+/* ---------- 2018 Census density via esri-leaflet (OFF by default) ---------- */
+const CENSUS_FS_URL =
+  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0';
 
-  // 1) Load data
-  let census;
-  try {
-    census = await window.fetchCensusEAWithDensity();
-  } catch (e) {
-    console.error(e);
-    alert("Failed to load 2018 census layer.");
-    return;
-  }
+let censusFL = null;          // FeatureLayer handle (we create it lazily)
+let censusBreaks = null;      // quantile breaks for legend/colors
+const censusColors = ['#edf8fb','#b2e2e2','#66c2a4','#2ca25f','#006d2c','#00441b'];
 
-  // 2) Build a color scale (quantiles by density)
-  const vals = census.features.map(f => f.properties._density).filter(v => isFinite(v));
-  vals.sort((a,b)=>a-b);
-  function q(p) {
-    const i = Math.floor((vals.length-1) * p);
-    return vals.length ? vals[i] : 0;
-  }
-  const breaks = [q(0.1), q(0.3), q(0.5), q(0.7), q(0.9)]; // 10–90th pct
-  const colors = ["#edf8fb","#b2e2e2","#66c2a4","#2ca25f","#006d2c","#00441b"]; // light→dark
+// Compute density from ArcGIS props
+function densityFromProps(p) {
+  const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
+  const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0);
+  const km2 = m2 > 0 ? m2 / 1e6 : 0;
+  return km2 > 0 ? (tot / km2) : 0;
+}
 
-  function colorFor(v) {
-    if (!isFinite(v)) return "#cccccc";
-    if (v <= breaks[0]) return colors[0];
-    if (v <= breaks[1]) return colors[1];
-    if (v <= breaks[2]) return colors[2];
-    if (v <= breaks[3]) return colors[3];
-    if (v <= breaks[4]) return colors[4];
-    return colors[5];
-  }
+function colorForDensity(d) {
+  if (!censusBreaks) return '#ccc';
+  if (d <= censusBreaks[0]) return censusColors[0];
+  if (d <= censusBreaks[1]) return censusColors[1];
+  if (d <= censusBreaks[2]) return censusColors[2];
+  if (d <= censusBreaks[3]) return censusColors[3];
+  if (d <= censusBreaks[4]) return censusColors[4];
+  return censusColors[5];
+}
 
-  // 3) Leaflet layer
-  const censusLayer = L.geoJSON(census, {
-    style: f => ({
-      color: "#555",
-      weight: 0.6,
-      fillColor: colorFor(f.properties._density),
-      fillOpacity: 0.65
-    }),
-    onEachFeature: (f, layer) => {
-      const p = f.properties || {};
-      const html = `
+// Build breaks + sidebar stats once (no map layer needed)
+function buildCensusBreaksAndStats() {
+  const statsDiv = document.getElementById('censusStats');
+  return new Promise((resolve, reject) => {
+    L.esri.query({ url: CENSUS_FS_URL })
+      .where('1=1')
+      .fields(['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID','EA_NAME'])
+      .returnGeometry(false)
+      .run((err, fc) => {
+        if (err) { statsDiv.innerHTML = `<span class="err">Failed: ${err.message}</span>`; return reject(err); }
+        const feats = (fc?.features || []).filter(f => f && f.properties);
+        const vals = feats.map(f => densityFromProps(f.properties)).filter(Number.isFinite).sort((a,b)=>a-b);
+        const q = p => vals.length ? vals[Math.floor((vals.length-1)*p)] : 0;
+        censusBreaks = [q(0.10), q(0.30), q(0.50), q(0.70), q(0.90)];
+
+        // Sidebar stats + legend
+        const fmt0 = n => Number.isFinite(n) ? n.toFixed(0) : '—';
+        statsDiv.innerHTML = `
+          <div><b>Features:</b> ${feats.length.toLocaleString()}</div>
+          <div><b>Min / Median / Max (ppl/km²):</b><br>${fmt0(vals[0])} / ${fmt0(q(0.5))} / ${fmt0(vals[vals.length-1])}</div>
+          <div style="margin-top:6px"><b>Legend (quantiles)</b></div>
+          <div style="display:grid;grid-template-columns:16px 1fr;gap:6px 8px;align-items:center;margin-top:4px">
+            ${[0,1,2,3,4,5].map(i=>{
+              const lab = [
+                `≤ ${fmt0(censusBreaks[0])}`,
+                `${fmt0(censusBreaks[0])}–${fmt0(censusBreaks[1])}`,
+                `${fmt0(censusBreaks[1])}–${fmt0(censusBreaks[2])}`,
+                `${fmt0(censusBreaks[2])}–${fmt0(censusBreaks[3])}`,
+                `${fmt0(censusBreaks[3])}–${fmt0(censusBreaks[4])}`,
+                `> ${fmt0(censusBreaks[4])}`
+              ][i];
+              return `<span style="width:16px;height:12px;border:1px solid #555;background:${censusColors[i]}"></span><span>${lab}</span>`;
+            }).join('')}
+          </div>`;
+        resolve();
+      });
+  });
+}
+
+// Create the FeatureLayer (but don't add until toggled on)
+function createCensusFeatureLayer() {
+  if (censusFL) return censusFL;
+
+  censusFL = L.esri.featureLayer({
+    url: CENSUS_FS_URL,
+    pane: 'features',
+    where: '1=1',
+    simplifyFactor: 0.3,
+    precision: 6,
+    style: function (feature) {
+      const d = densityFromProps(feature.properties || {});
+      return { color:'#555', weight:0.6, fillColor: colorForDensity(d), fillOpacity:0.65 };
+    },
+    onEachFeature: function (feature, layer) {
+      const p = feature.properties || {};
+      const d = densityFromProps(p);
+      const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
+      const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0);
+      const km2 = m2 > 0 ? m2/1e6 : 0;
+      layer.bindPopup(`
         <div style="min-width:240px">
-          <strong>2018 EA</strong>
+          <strong>2018 Enumeration Area</strong>
           <table style="width:100%;font-size:12px">
-            <tr><td>Total pop</td><td>${(p._pop_total ?? 0).toLocaleString()}</td></tr>
-            <tr><td>Area (km²)</td><td>${(p._area_km2 ?? 0).toFixed(3)}</td></tr>
-            <tr><td><strong>Density (ppl/km²)</strong></td><td><strong>${(p._density ?? 0).toFixed(1)}</strong></td></tr>
+            <tr><td>Total pop</td><td>${Number.isFinite(tot)?tot.toLocaleString():'0'}</td></tr>
+            <tr><td>Area (km²)</td><td>${Number.isFinite(km2)?km2.toFixed(3):'0.000'}</td></tr>
+            <tr><td><b>Density (ppl/km²)</b></td><td><b>${Number.isFinite(d)?d.toFixed(1):'0.0'}</b></td></tr>
           </table>
-        </div>`;
-      layer.bindPopup(html);
+        </div>
+      `);
     }
   });
 
-  // 4) Add to map + layer control
-  censusLayer.addTo(window.map);  // assumes you saved your map as window.map
-  if (window.layerControl) {
-    window.layerControl.addOverlay(censusLayer, "2018 Census population density");
-  }
+  return censusFL;
+}
 
-  // 5) Toggle checkbox
-  const toggle = document.getElementById("toggle-census");
-  if (toggle) {
-    toggle.addEventListener("change", () => {
-      if (toggle.checked) censusLayer.addTo(window.map);
-      else window.map.removeLayer(censusLayer);
-    });
-  }
+// Wire up the sidebar controls
+(async function wireCensusUI() {
+  const toggle = document.getElementById('toggleCensus');          // NOTE: id = toggleCensus
+  const btn    = document.getElementById('btnExportCensusTop10');  // NOTE: id = btnExportCensusTop10
+  const stats  = document.getElementById('censusStats');
 
-  // 6) Export Top-10 by density (CSV)
-  const btn = document.getElementById("btn-export-top10");
-  if (btn) {
-    btn.addEventListener("click", () => {
-      // sort by density desc
-      const rows = census.features
-        .map(f => f.properties)
-        .sort((a,b) => (b._density||0) - (a._density||0))
-        .slice(0,10);
+  try {
+    stats.textContent = 'Loading stats…';
+    await buildCensusBreaksAndStats();
+  } catch { /* stats div already shows error */ }
 
-      // Conditions summary (edit to reflect your UI filters if any)
-      const conditions = {
-        dataset: "2018 Municipal Census – Enumeration Areas (Strathcona)",
-        metric: "population density (people/km²) = tot_pop / (Shape_Area / 1e6)",
-        date_generated: new Date().toISOString(),
-        bbox_used: window.CONFIG.censusEA.bbox || "none",
-      };
+  // Start OFF (checkbox should be unchecked in HTML)
+  toggle?.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      const fl = createCensusFeatureLayer();
+      fl.addTo(map);
+    } else if (censusFL) {
+      map.removeLayer(censusFL);
+    }
+  });
 
-      // Build CSV: include a header block with conditions (as comments)
-      const header = [
-        "# Conditions used:",
-        `# dataset,${conditions.dataset}`,
-        `# metric,${conditions.metric}`,
-        `# date_generated,${conditions.date_generated}`,
-        `# bbox_used,${conditions.bbox_used}`,
-        ""
-      ].join("\n");
+  // Export Top-10 (query without adding a map layer)
+  btn?.addEventListener('click', () => {
+    L.esri.query({ url: CENSUS_FS_URL })
+      .where('1=1')
+      .fields(['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID','EA_NAME'])
+      .returnGeometry(false)
+      .run((err, fc) => {
+        if (err) { console.error(err); alert('Export failed.'); return; }
 
-      // Pick a few useful columns (adapt as needed)
-      const cols = ["_density","_pop_total","_area_km2","tot_pop","Shape_Area","EA_ID","EA_NAME"];
-      // Try to detect an ID/Name field if different
-      const safe = (v) => (v===undefined || v===null) ? "" : String(v).replace(/"/g,'""');
+        const rows = (fc.features || [])
+          .map(f => {
+            const p = f.properties || {};
+            const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
+            const m2  = Number(p.Shape_Area ?? p.shape_area ?? 0);
+            const km2 = m2 > 0 ? m2/1e6 : 0;
+            const d   = km2 > 0 ? (tot / km2) : 0;
+            return { _density:d, _pop_total:tot, _area_km2:km2, ...p };
+          })
+          .sort((a,b)=> (b._density||0) - (a._density||0))
+          .slice(0,10);
 
-      let csv = "rank," + cols.join(",") + "\n";
-      rows.forEach((p, i) => {
-        const line = [i+1].concat(cols.map(c => safe(p[c]))).join(",");
-        csv += line + "\n";
+        const header = [
+          '# Conditions',
+          '# dataset, 2018 Municipal Census — Enumeration Areas (Strathcona)',
+          '# metric, population density (people/km²) = tot_pop / (Shape_Area / 1e6)',
+          `# date_generated, ${new Date().toISOString()}`,
+          ''
+        ].join('\n');
+
+        const cols = ['_density','_pop_total','_area_km2','tot_pop','Shape_Area','EA_ID','EA_NAME'];
+        const safe = v => (v==null ? '' : String(v).replace(/"/g,'""'));
+        let csv = 'rank,' + cols.join(',') + '\n';
+        rows.forEach((p,i)=> { csv += [i+1].concat(cols.map(c=>safe(p[c]))).join(',') + '\n'; });
+
+        const blob = new Blob([header + csv], { type:'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'top10_census_density.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
       });
+  });
+})();
 
-      window.downloadText("top10_density.csv", header + csv);
-    });
-  }
 
   // 7) Optional legend
   const legend = L.control({ position: "bottomleft" });
