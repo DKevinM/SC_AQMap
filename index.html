@@ -576,12 +576,23 @@ window.addEventListener('DOMContentLoaded', () => {
   /* -------- wire up + go -------- */
   ui.runBtn.addEventListener('click', recompute);
 
+  document.getElementById('btnClear')?.addEventListener('click', clearResults);
+
   // PurpleAir toggle
-  ui.togglePA.addEventListener('change', async e=>{
-    if (e.target.checked){ if(!paLayer) paLayer = await buildExternalPointsLayer(LAYER_URLS.purpleair,{color:'#7a1fa2',label:'PurpleAir'});
+  ui.togglePA.addEventListener('change', async (e) => {
+    if (e.target.checked) {
+      if (!paLayer) {
+        paLayer = await buildExternalPointsLayer(
+          LAYER_URLS.purpleair,
+          { color: '#7a1fa2', label: 'PurpleAir' }
+        );
+      }
       if (paLayer) { paLayer.addTo(map); paLayer.bringToFront?.(); }
-    else { paLayer && map.removeLayer(paLayer); }
+    } else {
+      if (paLayer) map.removeLayer(paLayer);
+    }
   });
+
 
   // Stations toggle (data.js)
   ui.toggleStations.addEventListener('change', async e=>{
