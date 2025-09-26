@@ -33,6 +33,70 @@ const shortLookup = {
 };
 
 
+// --- CONFIG: 2018 Strathcona enumeration areas (GeoJSON) ---
+if (!window.CONFIG) window.CONFIG = {};
+Object.assign(window.CONFIG, {
+  censusEA: {
+    url: "https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson",
+    // optional: filter to a bbox if you want only Strathcona (leave null to take all)
+    bbox: null, // e.g., [-113.5, 53.3, -112.9, 53.8]
+  }
+});
+
+/** Fetch the 2018 Census EA GeoJSON and compute density (people/km^2) */
+async function fetchCensusEAWithDensity() {
+  const { url, bbox } = window.CONFIG.censusEA;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Census EA fetch failed: ${r.status}`);
+  const gj = await r.json();
+
+  const features = (gj.features || []).filter(f => f && f.properties);
+
+  for (const f of features) {
+    const p = f.properties;
+    // Expect fields: tot_pop, Shape_Area (m^2 from source)
+    const tot = Number(p.tot_pop ?? p.TOT_POP ?? p.TOTAL_POP ?? 0);
+    const area_m2 = Number(p.Shape_Area ?? p.shape_area ?? 0);
+    const km2 = area_m2 > 0 ? area_m2 / 1e6 : 0;
+    const dens = km2 > 0 ? tot / km2 : 0;
+    p._pop_total = isFinite(tot) ? tot : 0;
+    p._area_km2  = isFinite(km2) ? km2 : 0;
+    p._density   = isFinite(dens) ? dens : 0;
+  }
+
+  // optional spatial clip to bbox (client-side; keep simple)
+  if (Array.isArray(bbox) && bbox.length === 4) {
+    const [xmin, ymin, xmax, ymax] = bbox;
+    gj.features = features.filter(f => {
+      const g = f.geometry;
+      if (!g) return false;
+      const coords = g.type === "Polygon" ? g.coordinates.flat(2) :
+                     g.type === "MultiPolygon" ? g.coordinates.flat(3) : [];
+      // keep any vertex within bbox (fast but coarse)
+      for (let i = 0; i < coords.length; i += 2) {
+        const x = coords[i], y = coords[i+1];
+        if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) return true;
+      }
+      return false;
+    });
+  } else {
+    gj.features = features;
+  }
+
+  return gj;
+}
+window.fetchCensusEAWithDensity = fetchCensusEAWithDensity;
+
+/** Utility: download text as a file */
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+window.downloadText = downloadText;
 
 
 window.dataReady = fetch('https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/last6h.csv')
