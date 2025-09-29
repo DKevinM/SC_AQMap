@@ -334,14 +334,14 @@ window.addEventListener('DOMContentLoaded', () => {
     { test: /institution|school|college|univer|hospital|health|municipal|government|fire\s*hall|police|library|cemetery/i, label: 'Institutional' },
     { test: /residential|apartment|multi[- ]family|single[- ]detached|rowhouse|townhouse|mobile\s*home|country\s*residential/i, label: 'Residential' },
     { test: /park|open\s*space|recreation|trail|natural\s*area|conservation|environmental\s*reserve/i, label: 'Park/Open Space' },
-    { test: /agric|farm|rural|agribusiness|agri[- ]industrial/i, label: 'Agriculture' },
+    { test: /agric|agriculture|farm|rural|agribusiness|agri[- ]industrial/i, label: 'Agriculture' },
   ];
   
   // Normalize a zoning string to an uppercase code token (handles `CITP "Area BC"` → `CITP`)
   function normalizeZone(z) {
-    if (!z) return '';
-    const up = String(z).toUpperCase().trim();
-    // take first contiguous A–Z0–9 run (before spaces/quotes/punct)
+    if (z == null) return '';
+    const up = String(z).normalize('NFKC').toUpperCase().trim();
+    // Take the first contiguous A–Z0–9 run (handles: AG (Agriculture), CITP "Area BC", AG-1, AG;AR)
     const m = up.match(/[A-Z0-9]+/);
     return m ? m[0] : up;
   }
