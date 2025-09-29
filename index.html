@@ -414,46 +414,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return null; // let code fallback try
   }
   
-  // ====== ZONING-CODE FALLBACK (when description didn’t classify) ======
-  const ZONING_BUCKETS = {
-    Industrial: new Set(['IH','IHH','IL','ILT','IM','IMH']),
-    Commercial: new Set(['A','C1','C2','C3','C4','C5','C6','C7','CITP','DC1']), // DC1 often commercial-ish; will be refined by desc above
-    Institutional: new Set(['MI','MU1','MU2','PS','PU']),
-    Residential: new Set([
-      'ALD','HR1','HR2','HR4','R1A','R1B','R1C','R1D','R1E','R2A','R2B','R2C',
-      'R3','R4','R5','R6','R7','RCH','RCL','RCS','RE','RH','RLD1','RM','RS','RSO','SRR1','UV2','UV3','UV4'
-    ]),
-    'Park/Open Space': new Set(['PC','PG','PR','PRM']),
-    Agriculture: new Set(['AD','AG','AR','RA'])
-  };
-  
-  // ====== PUBLIC FUNCTION USED BY YOUR APP ======
-  function landUseScoreAndLabel(props){
-    const zRaw = props.lub_zoning ?? props.ZONE ?? props.DISTRICT ?? props.Zoning ?? '';
-    const dRaw = props.lub_description ?? props.LAND_USE ?? props.LANDUSE ?? '';
-    const zone = normalizeZone(zRaw);
-    const desc = normalizeDesc(dRaw);
-  
-    // 1) classify by DESCRIPTION (handles CITP/UV/DC variants & shared descriptions)
-    let bucket = classifyByDescription(desc);
-  
-    // 2) if description was ambiguous, fall back to ZONING code
-    if (!bucket && zone) {
-      for (const [b,set] of Object.entries(ZONING_BUCKETS)) {
-        if (set.has(zone)) { bucket = b; break; }
-      }
-    }
-  
-    // 3) if still unknown, be neutral
-    if (!bucket) return { score: 0.50, label: 'Unclassified', source: { zone: zRaw, desc: dRaw } };
-  
-    return { score: BUCKET_SCORE[bucket], label: bucket, source: { zone: zRaw, desc: dRaw } };
-  }
-
-
-
-
-  
+ 
 
   /* -------- state -------- */
   let LAYERS = {};
