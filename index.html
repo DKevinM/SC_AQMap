@@ -346,6 +346,51 @@ window.addEventListener('DOMContentLoaded', () => {
     u = u.replace(/\s*[-–—]\s*/g, ' - ').replace(/\s+/g, ' ').trim();
     return u;
   }
+
+
+
+  // Map a feature's props to our bucket + score using description first, then zoning code
+  function landUseScoreAndLabel(props){
+    const zRaw = props.lub_zoning ?? props.ZONE ?? props.DISTRICT ?? props.Zoning ?? '';
+    const dRaw = props.lub_description ?? props.LAND_USE ?? props.LANDUSE ?? '';
+    const zone = normalizeZone(zRaw);
+    const desc = normalizeDesc(dRaw);
+  
+    // 1) description-first classification
+    let bucket = classifyByDescription(desc);
+  
+    // 2) fallback to zoning code if still unknown
+    if (!bucket && zone) {
+      for (const [b, set] of Object.entries(ZONING_BUCKETS)) {
+        if (set.has(zone)) { bucket = b; break; }
+      }
+    }
+  
+    // 3) neutral if still unknown
+    if (!bucket) return { score: 0.50, label: 'Unclassified', source: { zone: zRaw, desc: dRaw } };
+  
+    return { score: BUCKET_SCORE[bucket], label: bucket, source: { zone: zRaw, desc: dRaw } };
+  }
+  
+  // Look up land-use at a point: exact polygon hit else nearest polygon
+  function landUseAtPointWithDetails(pt, polysFC){
+    for (const f of (polysFC.features || [])) {
+      try { if (turf.booleanPointInPolygon(pt, f)) return landUseScoreAndLabel(f.properties || {}); }
+      catch {}
+    }
+    if (!(polysFC.features || []).length) return { score: 0.50, label: '(no polygons)' };
+    let best=null, bestD=Infinity;
+    for (const f of polysFC.features) {
+      try {
+        const d = turf.distance(pt, turf.centroid(f), { units:'kilometers' });
+        if (d < bestD) { bestD = d; best = landUseScoreAndLabel(f.properties || {}); }
+      } catch {}
+    }
+    return best || { score: 0.50, label: 'Unclassified' };
+  }
+
+
+
   
   // ====== DESCRIPTION-FIRST CLASSIFIER ======
   function classifyByDescription(descRaw){
@@ -540,22 +585,27 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Pull EAs once for MCDA, with geometry (paginate to be safe)
       async function queryAllCensus(returnGeom = true) {
-        const url = 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0';
-        const pageSize = 2000; let offset = 0;
-        const out = { type:'FeatureCollection', features: [] };
+        const base = 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query';
+        const fields = ['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID'].join(',');
+        const chunk = 2000;
+        let offset = 0;
+        const out = { type:'FeatureCollection', features:[] };
         while (true) {
-          const q = L.esri.query({ url })
-            .where('1=1').fields(['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID'])
-            .orderBy('OBJECTID','ASC').limit(pageSize).offset(offset)
-            .returnGeometry(returnGeom);
-          const fc = await new Promise((res,rej)=>q.run((e,r)=>e?rej(e):res(r)));
-          const feats = fc?.features || [];
+          const url = `${base}?where=1=1&outFields=${encodeURIComponent(fields)}&f=geojson` +
+                      `&returnExceededLimitFeatures=true&outSR=4326` +
+                      `&resultOffset=${offset}&resultRecordCount=${chunk}` +
+                      `&returnGeometry=${returnGeom ? 'true' : 'false'}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`Census HTTP ${res.status} at offset ${offset}`);
+          const gj = await res.json();
+          const feats = gj.features || [];
           out.features.push(...feats);
-          if (feats.length < pageSize) break;
-          offset += feats.length; if (offset > 1_000_000) break;
+          if (feats.length < chunk) break;
+          offset += feats.length;
         }
         return out;
       }
+
       
       try {
         const fc = await queryAllCensus(true);
