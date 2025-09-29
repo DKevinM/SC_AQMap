@@ -154,6 +154,11 @@
     </div>
 
     <div class="group">
+      <button id="btnExportMCDA" class="btn">Download Top 10 (CSV)</button>
+      <span class="small muted">Exports Top 10 + parameters & component values</span>
+    </div>
+
+    <div class="group">
       <div class="small"><b>Legend</b> (low → high)</div>
       <div class="legend"></div>
     </div>
@@ -206,6 +211,10 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(()=>map.invalidateSize(),0);
   window.addEventListener('resize',()=>map.invalidateSize());
 
+  // remember last MCDA results so we can export later
+  window.lastMCDA = null;
+
+  
   /* -------- UI refs -------- */
   const ui = {
     mode: mode,
@@ -501,6 +510,18 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!LAYERS.land) { ui.status.innerHTML='<span class="warn">Data not loaded yet…</span>'; return; }
     ui.status.innerHTML='<span class="muted">Computing…</span>';
 
+    // ... inside recompute(), after you compute s_wifi, s_amen, s_road, s_bld, s_lu, s_pop and r.score ...
+    r.components = { s_wifi, s_amen, s_road, s_bld, s_lu, s_pop };
+    r.inputs = {
+      dWifi_km: r.dWifi,
+      dAmen_km: r.dAmen,
+      dRoad_km: r.dRoad,
+      bldgCount100m: r.dens,
+      landUseLabel: r.luLabel,
+      landUseScore: r.luScore,
+      popDensity: (r.pd ?? null)
+    };
+
     const cellKm = +ui.cellkm.value, dMax = +ui.dmax.value;
     const mode = ui.mode.value, roadsPref = ui.roadsPref.value, excludePEMU = ui.excludePEMU.checked;
 
@@ -576,10 +597,99 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.lu_readout.textContent = '—';
   }
 
+    // After you build top10 and topFC
+    window.lastMCDA = {
+      when: new Date().toISOString(),
+      params: {
+        mode,
+        roadsPref,
+        excludePEMU,
+        cellKm,
+        dMax,
+        weightsNormalized: { ...w }  // the normalized weights you computed
+      },
+      top10,          // array of the 10 best cells with all the attached details (center, score, components, inputs)
+      bbox: bbox      // optional, useful context
+    };
+  
+  
+    /* -------- wire up + go -------- */
+    ui.runBtn.addEventListener('click', recompute);
+    ui.btnClear.addEventListener('click', clearResults);
+  
+  function exportTop10CSV() {
+    const snap = window.lastMCDA;
+    if (!snap || !snap.top10?.length) {
+      alert('No Top 10 available yet. Click “Recompute” first.');
+      return;
+    }
+  
+    const metaLines = [
+      '# Rapid Suitability (MCDA-lite) — Top 10 Export',
+      `# generated_at, ${snap.when}`,
+      `# mode, ${snap.params.mode}`,
+      `# roadsPref, ${snap.params.roadsPref}`,
+      `# excludePEMU, ${snap.params.excludePEMU}`,
+      `# cellKm, ${snap.params.cellKm}`,
+      `# dMax_km, ${snap.params.dMax}`,
+      `# weights_normalized, wifi=${snap.params.weightsNormalized.wifi}; amen=${snap.params.weightsNormalized.amen}; road=${snap.params.weightsNormalized.road}; lu=${snap.params.weightsNormalized.lu}; bld=${snap.params.weightsNormalized.bld}; pop=${snap.params.weightsNormalized.pop}`,
+      ''
+    ].join('\n');
+  
+    // Columns you’ll get per candidate row:
+    const header = [
+      'rank',
+      'lat','lon',
+      'score',
+      // component scores (0–1):
+      's_wifi','s_amen','s_road','s_lu','s_bld','s_pop',
+      // raw inputs that fed the scoring:
+      'dWifi_km','dAmen_km','dRoad_km','bldgCount100m',
+      'landUseLabel','landUseScore',
+      'popDensity_people_per_km2'
+    ];
+  
+    let csv = header.join(',') + '\n';
+  
+    snap.top10.forEach((r, i) => {
+      const coords = r.center?.geometry?.coordinates || [null, null];
+      const lat = coords[1], lon = coords[0];
+  
+      const row = [
+        i + 1,
+        lat, lon,
+        (r.score ?? ''),
+        // component scores:
+        (r.components?.s_wifi ?? ''),
+        (r.components?.s_amen ?? ''),
+        (r.components?.s_road ?? ''),
+        (r.components?.s_lu   ?? ''),
+        (r.components?.s_bld  ?? ''),
+        (r.components?.s_pop  ?? ''),
+        // raw inputs:
+        (r.inputs?.dWifi_km ?? ''),
+        (r.inputs?.dAmen_km ?? ''),
+        (r.inputs?.dRoad_km ?? ''),
+        (r.inputs?.bldgCount100m ?? ''),
+        JSON.stringify(r.inputs?.landUseLabel ?? ''),
+        (r.inputs?.landUseScore ?? ''),
+        (r.inputs?.popDensity ?? '')
+      ];
+  
+      csv += row.join(',') + '\n';
+    });
+  
+    const blob = new Blob([metaLines + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'strathcona_top10_mcda.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  
+  // Wire up the button
+  document.getElementById('btnExportMCDA')?.addEventListener('click', exportTop10CSV);
 
-  /* -------- wire up + go -------- */
-  ui.runBtn.addEventListener('click', recompute);
-  ui.btnClear.addEventListener('click', clearResults);
   
   // PurpleAir toggle
   ui.togglePA.addEventListener('change', async (e) => {
