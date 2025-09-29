@@ -318,6 +318,7 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   
   // Scores for each bucket
+  // ====== CONFIG: 6 buckets → score ======
   const BUCKET_SCORE = {
     'Industrial': 0.90,
     'Commercial': 0.80,
@@ -327,50 +328,128 @@ window.addEventListener('DOMContentLoaded', () => {
     'Agriculture': 0.50
   };
   
-  // ---------- 2) OPTIONAL: description fallback rules ----------
-  const DESC_RULES = [
-    { test: /industrial|business\s*park|manufactur|warehouse|logistics|processing|plant/i, label: 'Industrial' },
-    { test: /commercial|retail|shopping|mixed[- ]use\s*commercial|office|service\s*commercial|downtown\s*commercial/i, label: 'Commercial' },
-    { test: /institution|school|college|univer|hospital|health|municipal|government|fire\s*hall|police|library|cemetery/i, label: 'Institutional' },
-    { test: /residential|apartment|multi[- ]family|single[- ]detached|rowhouse|townhouse|mobile\s*home|country\s*residential/i, label: 'Residential' },
-    { test: /park|open\s*space|recreation|trail|natural\s*area|conservation|environmental\s*reserve/i, label: 'Park/Open Space' },
-    { test: /agric|agriculture|farm|rural|agribusiness|agri[- ]industrial/i, label: 'Agriculture' },
-  ];
+  // ====== NORMALIZERS ======
+  function norm(s){ return (s==null?'':String(s)).normalize('NFKC').trim(); }
+  function upper(s){ return norm(s).toUpperCase(); }
   
-  // Normalize a zoning string to an uppercase code token (handles `CITP "Area BC"` → `CITP`)
-  function normalizeZone(z) {
-    if (z == null) return '';
-    const up = String(z).normalize('NFKC').toUpperCase().trim();
-    // Take the first contiguous A–Z0–9 run (handles: AG (Agriculture), CITP "Area BC", AG-1, AG;AR)
-    const m = up.match(/[A-Z0-9]+/);
-    return m ? m[0] : up;
+  // Normalize zoning like: CITP "Area BC" → CITP ; DC71 "A" → DC71 ; AG (stuff) → AG
+  function normalizeZone(z){
+    const u = upper(z);
+    const m = u.match(/[A-Z0-9]+/); // first token
+    return m ? m[0] : u;
   }
   
-  function landUseScoreAndLabel(props) {
+  // Normalize description like: "CITP - Centre in the Park" → "CITP - CENTRE IN THE PARK"
+  function normalizeDesc(d){
+    let u = upper(d);
+    // collapse weird dashes/whitespace
+    u = u.replace(/\s*[-–—]\s*/g, ' - ').replace(/\s+/g, ' ').trim();
+    return u;
+  }
+  
+  // ====== DESCRIPTION-FIRST CLASSIFIER ======
+  function classifyByDescription(descRaw){
+    const d = normalizeDesc(descRaw);
+  
+    // --- exact descriptions (fast path) ---
+    // Airport
+    if (d === 'A - AIRPORT') return 'Institutional';
+  
+    // Agriculture family
+    if (d.startsWith('AD - AGRICULTURE') || d.startsWith('AG - AGRICULTURE') ||
+        d.startsWith('AR - AGRICULTURE') || d.includes('RURAL RESIDENTIAL/AGRICULTURE')) {
+      return 'Agriculture';
+    }
+  
+    // Park/Open Space family
+    if (d.startsWith('PC -') || d.startsWith('PG -') ||
+        d.startsWith('PR -') || d.startsWith('PRM -')) {
+      return 'Park/Open Space';
+    }
+  
+    // Industrial family
+    if (d.startsWith('IH -') || d.startsWith('IHH -') ||
+        d.startsWith('IL -') || d.startsWith('ILT -') ||
+        d.startsWith('IM -') || d.startsWith('IMH -')) {
+      return 'Industrial';
+    }
+  
+    // Commercial family (C1..C7, CITP - Centre in the Park)
+    if (d.startsWith('C1 -') || d.startsWith('C2 -') || d.startsWith('C3 -') ||
+        d.startsWith('C4 -') || d.startsWith('C5 -') || d.startsWith('C6 -') ||
+        d.startsWith('C7 -') || d.includes('CITP - CENTRE IN THE PARK')) {
+      return 'Commercial';
+    }
+  
+    // Institutional family
+    if (d.startsWith('MI -') || d.startsWith('MU1 -') || d.startsWith('MU2 -') ||
+        d.startsWith('PS -') || d.startsWith('PU -')) {
+      return 'Institutional';
+    }
+  
+    // Residential family
+    if (/^(ALD|HR1|HR2|HR4|R1A|R1B|R1C|R1D|R1E|R2A|R2B|R2C|R3|R4|R5|R6|R7|RCH|RCL|RCS|RE|RH|RLD1|RM|RS|RSO|SRR1|UV2|UV3|UV4)\b/.test(d)) {
+      return 'Residential';
+    }
+  
+    // --- keyword heuristics (if the exact startsWith didn’t trigger) ---
+    if (/AGRIC|FARM|RURAL/.test(d)) return 'Agriculture';
+    if (/PARK|OPEN SPACE|RECREATION|TRAIL|NATURAL AREA|CONSERV/.test(d)) return 'Park/Open Space';
+    if (/INDUSTRIAL|WAREHOUSE|LOGISTICS|PROCESSING|PLANT|BUSINESS PARK/.test(d)) return 'Industrial';
+    if (/COMMERCIAL|RETAIL|SHOPPING|OFFICE|SERVICE COMMERCIAL|DOWNTOWN COMMERCIAL/.test(d)) return 'Commercial';
+    if (/INSTITUTION|SCHOOL|HOSPITAL|HEALTH|MUNICIPAL|GOVERNMENT|FIRE HALL|POLICE|LIBRARY|CEMETERY/.test(d)) return 'Institutional';
+    if (/RESIDENTIAL|APARTMENT|MULTI[- ]FAMILY|SINGLE[- ]DETACHED|TOWN(HOUSE)?|ROW(HOUSE)?|MOBILE HOME|URBAN VILLAGE/.test(d)) return 'Residential';
+  
+    // --- Direct Control nuance: try to infer from trailing words ---
+    if (d.includes('DC - DIRECT CONTROL')) {
+      if (/RESIDENTIAL|URBAN VILLAGE/.test(d)) return 'Residential';
+      if (/COMMERCIAL|RETAIL|OFFICE/.test(d)) return 'Commercial';
+      if (/INDUSTRIAL/.test(d)) return 'Industrial';
+      if (/PARK|OPEN SPACE|RECREATION/.test(d)) return 'Park/Open Space';
+      if (/AGRIC/.test(d)) return 'Agriculture';
+      if (/INSTITUTION|SCHOOL|HOSPITAL|GOVERNMENT/.test(d)) return 'Institutional';
+      return null; // unknown DC → let code try; else neutral
+    }
+  
+    return null; // let code fallback try
+  }
+  
+  // ====== ZONING-CODE FALLBACK (when description didn’t classify) ======
+  const ZONING_BUCKETS = {
+    Industrial: new Set(['IH','IHH','IL','ILT','IM','IMH']),
+    Commercial: new Set(['A','C1','C2','C3','C4','C5','C6','C7','CITP','DC1']), // DC1 often commercial-ish; will be refined by desc above
+    Institutional: new Set(['MI','MU1','MU2','PS','PU']),
+    Residential: new Set([
+      'ALD','HR1','HR2','HR4','R1A','R1B','R1C','R1D','R1E','R2A','R2B','R2C',
+      'R3','R4','R5','R6','R7','RCH','RCL','RCS','RE','RH','RLD1','RM','RS','RSO','SRR1','UV2','UV3','UV4'
+    ]),
+    'Park/Open Space': new Set(['PC','PG','PR','PRM']),
+    Agriculture: new Set(['AD','AG','AR','RA'])
+  };
+  
+  // ====== PUBLIC FUNCTION USED BY YOUR APP ======
+  function landUseScoreAndLabel(props){
     const zRaw = props.lub_zoning ?? props.ZONE ?? props.DISTRICT ?? props.Zoning ?? '';
     const dRaw = props.lub_description ?? props.LAND_USE ?? props.LANDUSE ?? '';
     const zone = normalizeZone(zRaw);
-    const desc = String(dRaw || '').trim();
+    const desc = normalizeDesc(dRaw);
   
-    // 1) Try exact code mapping (preferred)
-    for (const [bucket, set] of Object.entries(ZONING_BUCKETS)) {
-      if (zone && set.has(zone)) {
-        return { score: BUCKET_SCORE[bucket], label: bucket, source: { zone: zRaw, desc } };
+    // 1) classify by DESCRIPTION (handles CITP/UV/DC variants & shared descriptions)
+    let bucket = classifyByDescription(desc);
+  
+    // 2) if description was ambiguous, fall back to ZONING code
+    if (!bucket && zone) {
+      for (const [b,set] of Object.entries(ZONING_BUCKETS)) {
+        if (set.has(zone)) { bucket = b; break; }
       }
     }
   
-    // 2) Fallback by description keywords (just in case)
-    if (desc) {
-      for (const r of DESC_RULES) {
-        if (r.test.test(desc)) {
-          return { score: BUCKET_SCORE[r.label], label: r.label, source: { zone: zRaw, desc } };
-        }
-      }
-    }
+    // 3) if still unknown, be neutral
+    if (!bucket) return { score: 0.50, label: 'Unclassified', source: { zone: zRaw, desc: dRaw } };
   
-    // 3) Final fallback: neutral
-    return { score: 0.50, label: 'Unclassified', source: { zone: zRaw, desc } };
+    return { score: BUCKET_SCORE[bucket], label: bucket, source: { zone: zRaw, desc: dRaw } };
   }
+
 
 
 
@@ -464,30 +543,19 @@ window.addEventListener('DOMContentLoaded', () => {
         style: f => {
           const det = landUseScoreAndLabel(f.properties || {});
           const t = (det.score - 0.4) / (0.9 - 0.4);
-          return {
-            color: '#666',
-            weight: 0.5,
-            fillColor: `hsl(${210 - 160 * Math.max(0, Math.min(1, t))}, 60%, 70%)`,
-            fillOpacity: 0.35
-          };
+          return { color:'#666', weight:0.5, fillColor:`hsl(${210-160*Math.max(0,Math.min(1,t))},60%,70%)`, fillOpacity:0.35 };
         },
         onEachFeature: (f, lyr) => {
           const p = f.properties || {};
           const det = landUseScoreAndLabel(p);
-          const zone = p.lub_zoning ?? p.ZONE ?? p.DISTRICT ?? p.Zoning ?? '';
-          const desc = p.lub_description ?? p.LAND_USE ?? p.LANDUSE ?? '';
+          const zone = p.lub_zoning ?? '';
+          const desc = p.lub_description ?? '';
       
-          // HOVER tooltip (no click)
+          // HOVER (no click)
           const tip = (desc || zone || 'Land-use') + ` — ${det.label} (${det.score.toFixed(2)})`;
-          lyr.bindTooltip(tip, {
-            permanent: false,
-            sticky: true,
-            direction: 'top',
-            offset: [0, -6],
-            className: 'npri-label'
-          });
+          lyr.bindTooltip(tip, { permanent:false, sticky:true, direction:'top', offset:[0,-6], className:'npri-label' });
       
-          // Optional click popup
+          // Optional: keep click popup
           lyr.bindPopup(`
             <div style="min-width:240px">
               <strong>Land-use</strong>
@@ -500,14 +568,11 @@ window.addEventListener('DOMContentLoaded', () => {
             </div>
           `);
       
-          // Simple highlight on hover
-          lyr.on('mouseover', () => {
-            lyr.setStyle({ weight: 1.2, color: '#333', fillOpacity: 0.45 });
-            lyr.bringToFront?.();
-          });
-          lyr.on('mouseout', () => landDisp.resetStyle(lyr));
+          lyr.on('mouseover', () => { lyr.setStyle({ weight:1.2, color:'#333', fillOpacity:0.45 }); lyr.bringToFront?.(); });
+          lyr.on('mouseout',  () => landDisp.resetStyle(lyr));
         }
       });
+
 
 
 
