@@ -510,18 +510,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!LAYERS.land) { ui.status.innerHTML='<span class="warn">Data not loaded yet…</span>'; return; }
     ui.status.innerHTML='<span class="muted">Computing…</span>';
 
-    // ... inside recompute(), after you compute s_wifi, s_amen, s_road, s_bld, s_lu, s_pop and r.score ...
-    r.components = { s_wifi, s_amen, s_road, s_bld, s_lu, s_pop };
-    r.inputs = {
-      dWifi_km: r.dWifi,
-      dAmen_km: r.dAmen,
-      dRoad_km: r.dRoad,
-      bldgCount100m: r.dens,
-      landUseLabel: r.luLabel,
-      landUseScore: r.luScore,
-      popDensity: (r.pd ?? null)
-    };
-
     const cellKm = +ui.cellkm.value, dMax = +ui.dmax.value;
     const mode = ui.mode.value, roadsPref = ui.roadsPref.value, excludePEMU = ui.excludePEMU.checked;
 
@@ -551,13 +539,16 @@ window.addEventListener('DOMContentLoaded', () => {
       raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore:luDet.score, luLabel:luDet.label, pd, allowed });
     }
 
-    const denMax = Math.max(1,maxBldDen);
-    for (const r of raw){
+    const denMax = Math.max(1, maxBldDen);
+    for (const r of raw) {
       const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);
-      const s_amen = (mode==='exposure') ? clamp(1 - (r.dAmen/dMax),0,1) : clamp((r.dAmen/dMax),0,1);
-      const s_road = (roadsPref==='closer') ? clamp(1 - (r.dRoad/dMax),0,1) : clamp((r.dRoad/dMax),0,1);
-      const s_bld  = clamp(r.dens/denMax,0,1);
-      const s_lu   = clamp(r.luScore,0,1);
+      const s_amen = (mode === 'exposure') ? clamp(1 - (r.dAmen / dMax), 0, 1)
+                                           : clamp((r.dAmen / dMax), 0, 1);
+      const s_road = (roadsPref === 'closer') ? clamp(1 - (r.dRoad / dMax), 0, 1)
+                                              : clamp((r.dRoad / dMax), 0, 1);
+      const s_bld  = clamp(r.dens / denMax, 0, 1);
+      const s_lu   = clamp(r.luScore, 0, 1);
+    
       let s_pop;
       if (r.pd == null || !isFinite(r.pd) || CENSUS_MAX <= CENSUS_MIN) {
         s_pop = 0.5;
@@ -565,9 +556,23 @@ window.addEventListener('DOMContentLoaded', () => {
         const t = (r.pd - CENSUS_MIN) / (CENSUS_MAX - CENSUS_MIN);
         s_pop = (mode === 'exposure') ? t : (1 - t);
       }
-      r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road + w.lu*s_lu + w.bld*s_bld + w.pop*s_pop;
-      r.score    = r.scoreRaw * r.allowed;
+    
+      r.components = { s_wifi, s_amen, s_road, s_bld, s_lu, s_pop };
+      r.inputs = {
+        dWifi_km: r.dWifi,
+        dAmen_km: r.dAmen,
+        dRoad_km: r.dRoad,
+        bldgCount100m: r.dens,
+        landUseLabel: r.luLabel,
+        landUseScore: r.luScore,
+        popDensity: (r.pd ?? null)
+      };
+    
+      r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road +
+                   w.lu*s_lu + w.bld*s_bld + w.pop*s_pop;
+      r.score = r.scoreRaw * r.allowed;
     }
+
 
     
     const minS = Math.min(...raw.map(r=>r.score)), maxS = Math.max(...raw.map(r=>r.score));
@@ -584,6 +589,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const top10 = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
     const topFC = { type:'FeatureCollection', features: top10.map(r=>({type:'Feature',properties:{score:+r.score.toFixed(3)},geometry:r.center.geometry})) };
+    // Save a snapshot for export
+    window.lastMCDA = {
+      when: new Date().toISOString(),
+      params: {
+        mode,
+        roadsPref,
+        excludePEMU,
+        cellKm,
+        dMax,
+        weightsNormalized: { ...w }
+      },
+      top10,   // each entry has .center, .score, .components, .inputs
+      bbox     // from turf.bbox(land)
+    };
+
+    
     if (topLayer) map.removeLayer(topLayer);
     topLayer = L.geoJSON(topFC, {
       pane:'markers',
@@ -597,21 +618,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.lu_readout.textContent = '—';
   }
 
-    // After you build top10 and topFC
-    window.lastMCDA = {
-      when: new Date().toISOString(),
-      params: {
-        mode,
-        roadsPref,
-        excludePEMU,
-        cellKm,
-        dMax,
-        weightsNormalized: { ...w }  // the normalized weights you computed
-      },
-      top10,          // array of the 10 best cells with all the attached details (center, score, components, inputs)
-      bbox: bbox      // optional, useful context
-    };
-  
+ 
   
     /* -------- wire up + go -------- */
     ui.runBtn.addEventListener('click', recompute);
