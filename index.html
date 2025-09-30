@@ -194,15 +194,6 @@ const URLS = {
 };
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
 
-// --- NPRI WMS (hover via GetFeatureInfo) ---
-ui.toggleNPRIwms.addEventListener('change', (e) => {
-  if (e.target.checked) {
-    startNpriHover();
-  } else {
-    stopNpriHover();
-  }
-});
-
 
 let npriLayer = null;
 let npriMoveHandler = null;
@@ -360,7 +351,21 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
+  
+  // after: const ui = { ... }
+  const NPRI_WMS_URL = '<<your WMS URL>>';
+  const NPRI_WMS_LAYERS = '<<your layer name or index>>';
+  
+  // (keep your startNpriHover/stopNpriHover/getFeatureInfoUrl helpers above or here)
+  
+  ui.toggleNPRIwms.addEventListener('change', (e) => {
+    if (e.target.checked) startNpriHover();
+    else stopNpriHover();
+  });
 
+
+
+  
   /* -------- helpers -------- */
   async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
     if (!baseUrl) throw new Error('Missing URL');
