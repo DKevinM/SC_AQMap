@@ -73,10 +73,6 @@ window.addEventListener('DOMContentLoaded', () => {
   [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
   
   
-  // (keep your startNpriHover/stopNpriHover/getFeatureInfoUrl helpers above or here)
-  
-
-
   
   /* -------- helpers -------- */
   async function fetchAllArcGISGeoJSON(baseUrl, chunk=2000){
@@ -369,81 +365,99 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
   }
   
-  // --- NPRI via ArcGIS REST MapServer (original symbology + identify) ---
+  // === NPRI (default symbology + HOVER identify) ===
   const NPRI_REST_URL = 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer';
-  // layer 0 is the facilities layer in this service
-  const NPRI_LAYERS = [0];
+  const NPRI_LAYERS   = [0];
   
-  let npriDyn = null;        // dynamic (server-rendered) layer
-  let npriTip = null;
-  let npriIdentifyHandler = null;
+  let npriDyn = null;              // server-rendered layer (keeps the original legend)
+  let npriTip = null;              // Leaflet tooltip for hover
+  let npriIdentifyHandler = null;  // mousemove handler
   
-  function startNpri() {
+  function startNpriHover() {
     const map = window.map;
-    if (!map || npriDyn) return;
+    if (!map) return;
   
-    // 1) Add the server-rendered map with default symbology
-    npriDyn = L.esri.dynamicMapLayer({
-      url: NPRI_REST_URL,
-      layers: NPRI_LAYERS,
-      opacity: 1
-    }).addTo(map);
+    // add the server-rendered layer once
+    if (!npriDyn) {
+      npriDyn = L.esri.dynamicMapLayer({
+        url: NPRI_REST_URL,
+        layers: NPRI_LAYERS,
+        opacity: 1
+      }).addTo(map);
+    }
   
-    // 2) Prepare a tooltip for hover/click identify
-    npriTip = L.tooltip({
-      sticky: true,
-      direction: 'top',
-      offset: [0, -6],
-      className: 'npri-label'
-    });
+    // create the tooltip once
+    if (!npriTip) {
+      npriTip = L.tooltip({
+        sticky: true,
+        direction: 'top',
+        offset: [0, -6],
+        className: 'npri-label'
+      });
+    }
   
-    // 3) Identify on hover (change to 'click' if you want)
+    // HTML escape util
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[m]));
+  
+    // throttle a bit so we don’t spam requests
     let tId = null;
     npriIdentifyHandler = (e) => {
       if (tId) clearTimeout(tId);
       tId = setTimeout(() => {
-        L.esri
-          .identifyFeatures({ url: NPRI_REST_URL })
+        L.esri.identifyFeatures({ url: NPRI_REST_URL })
           .on(map)
           .at(e.latlng)
           .layers('visible:' + NPRI_LAYERS.join(','))
-          .tolerance(6)
+          .tolerance(8)
           .returnGeometry(false)
           .run((err, fc) => {
-            if (err) {
-              if (npriTip?._map) map.removeLayer(npriTip);
-              return;
-            }
-            const f = (fc && fc.features && fc.features[0]) || null;
+            if (err) { if (npriTip?._map) map.removeLayer(npriTip); return; }
+            const f = fc?.features?.[0];
             if (!f) { if (npriTip?._map) map.removeLayer(npriTip); return; }
   
             const p = f.properties || {};
-            // Heuristic field picks; adjust once you see real keys:
-            const facilityName = p.FACILITY_NAME || p.FACILITY_NA || p.NAME || p.Name || '';
-            const companyName  = p.COMPANY_NAME  || p.COMPANY_NA  || p.COMPANY || p.OWNER || '';
-            const npriId       = p.NPRI_ID       || p.NPRI_NUMBER || p.NPRI    || p.NPRI_NUM || '';
-            const sector       = p.SECTOR        || p.SECTOR_NAME || p.Sector  || '';
-            const reportingYr  = p.REPORTING_YEAR|| p.YEAR        || p.ReportingYear || '';
   
-            // simple HTML escape
-            const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({
-              '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-            }[m]));
-            
-            // build the compact tooltip you wanted
+            // only these 5 fields:
+            const reportingYr = p.REPORTING_YEAR || p.YEAR || p.ReportingYear || '';
+            const npriId      = p.NPRI_ID        || p.NPRI_NUMBER || p.NPRI || p.NPRI_NUM || '';
+            const company     = p.COMPANY_NAME   || p.COMPANY_NA  || p.COMPANY || p.OWNER || '';
+            const facility    = p.FACILITY_NAME  || p.FACILITY_NA || p.NAME || p.Name || '';
+            const sector      = p.SECTOR         || p.SECTOR_NAME || p.Sector || '';
+  
             let html = '';
-            if (facilityName) html += `<div><b>Facility:</b> ${esc(facilityName)}</div>`;
-            if (companyName)  html += `<div><b>Company:</b> ${esc(companyName)}</div>`;
-            if (npriId)       html += `<div><b>NPRI ID:</b> ${esc(npriId)}</div>`;
-            if (sector)       html += `<div><b>Sector:</b> ${esc(sector)}</div>`;
-            if (reportingYr)  html += `<div><b>Reporting year:</b> ${esc(reportingYr)}</div>`;
-            
+            if (reportingYr) html += `<div><b>Reporting year:</b> ${esc(reportingYr)}</div>`;
+            if (npriId)      html += `<div><b>NPRI ID:</b> ${esc(npriId)}</div>`;
+            if (company)     html += `<div><b>Company:</b> ${esc(company)}</div>`;
+            if (facility)    html += `<div><b>Facility:</b> ${esc(facility)}</div>`;
+            if (sector)      html += `<div><b>Sector:</b> ${esc(sector)}</div>`;
+  
             npriTip.setContent(html || '<b>NPRI Facility</b>');
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
           });
-      }, 150);
+      }, 120);
     };
+  
+    map.on('mousemove', npriIdentifyHandler);
+  }
+  
+  function stopNpriHover() {
+    const map = window.map;
+    if (map && npriIdentifyHandler) map.off('mousemove', npriIdentifyHandler);
+    npriIdentifyHandler = null;
+    if (npriTip && npriTip._map) map.removeLayer(npriTip);
+    npriTip = null;
+    if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
+  }
+  
+  // wire the checkbox (make sure your HTML has id="toggleNPRIwms")
+  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
+    if (e.target.checked) startNpriHover();
+    else stopNpriHover();
+  });
+
   
     // hover; switch to 'click' if you prefer quieter identify
     map.on('mousemove', npriIdentifyHandler);
