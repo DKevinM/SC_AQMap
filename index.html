@@ -269,7 +269,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const sep = baseUrl.includes('?') ? '&' : '?';
     let offset = 0, all = [];
     while (true) {
-      const url = `${baseUrl}${sep}returnExceededLimitFeatures=true&outSR=4326&resultOffset=${offset}&resultRecordCount=${chunk}`;
+      const url = `${baseUrl}${sep}returnExceededLimitFeatures=true&outSR=4326` +
+                  `&orderByFields=OBJECTID&resultOffset=${offset}&resultRecordCount=${chunk}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
       const gj = await res.json();
@@ -278,10 +279,11 @@ window.addEventListener('DOMContentLoaded', () => {
       all = all.concat(feats);
       if (feats.length < chunk) break;
       offset += feats.length;
-      if (offset > 1_000_000) break;
+      if (offset > 2_000_000) break; // sanity guard
     }
     return { type:'FeatureCollection', features: all };
   }
+
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const centroidOrPoint=f=>!f?.geometry?null:(f.geometry.type==='Point'?f:turf.centroid(f));
   function distanceToFeaturesKm(pt, fc){
@@ -638,17 +640,17 @@ window.addEventListener('DOMContentLoaded', () => {
   async function init(){
     try {
       ui.status.textContent='Loading live layers…';
-      const [wifi,play,parks,fields,splash,bldg,roads,pemu,land] = await Promise.all([
-        fetchAllArcGISGeoJSON(URLS.wifi),
-        fetchAllArcGISGeoJSON(URLS.play),
-        fetchAllArcGISGeoJSON(URLS.parks),
-        fetchAllArcGISGeoJSON(URLS.fields),
-        fetchAllArcGISGeoJSON(URLS.splash),
-        fetchAllArcGISGeoJSON(URLS.bldg),
-        fetchAllArcGISGeoJSON(URLS.roads),
-        fetchAllArcGISGeoJSON(URLS.pemu),
-        queryAllLandUse()
-      ]);
+        const [wifi,play,parks,fields,splash,bldg,roads,pemu,landAll] = await Promise.all([
+          fetchAllArcGISGeoJSON(URLS.wifi),
+          fetchAllArcGISGeoJSON(URLS.play),
+          fetchAllArcGISGeoJSON(URLS.parks),
+          fetchAllArcGISGeoJSON(URLS.fields),
+          fetchAllArcGISGeoJSON(URLS.splash),
+          fetchAllArcGISGeoJSON(URLS.bldg),
+          fetchAllArcGISGeoJSON(URLS.roads),
+          fetchAllArcGISGeoJSON(URLS.pemu),
+          fetchAllArcGISGeoJSON(URLS.land)   
+        ]);
 
       const amenities = {
         type:'FeatureCollection',
@@ -660,9 +662,8 @@ window.addEventListener('DOMContentLoaded', () => {
       };
       const bldgCentroids = { type:'FeatureCollection', features:bldg.features.map(f=>turf.centroid(f)) };
 
-      LAYERS = { wifi, play, parks, fields, splash, amenities, bldgPolys:bldg, bldgCentroids, roads, pemu, land };
+      LAYERS = { wifi, play, parks, fields, splash, amenities, bldgPolys:bldg, bldgCentroids, roads, pemu, land: landAll };
 
-      try { const bb=turf.bbox(land); map.fitBounds([[bb[1],bb[0]],[bb[3],bb[2]]],{padding:[15,15]}); } catch {}
 
       // Display overlays (constant widths)
       const wifiDisp  = L.geoJSON(wifi,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}) });
@@ -709,7 +710,14 @@ window.addEventListener('DOMContentLoaded', () => {
           lyr.on('mouseout', () => pemuDisp.resetStyle(lyr));
         }
       });
-      const landDisp = L.geoJSON(land, {
+
+      
+      // Streamed land-use display layer (reliable, loads by extent)
+      const landFL = L.esri.featureLayer({
+        url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0',
+        pane: 'features',
+        simplifyFactor: 0.2,
+        precision: 7,
         style: f => {
           const det = landUseScoreAndLabel(f.properties || {});
           const t = (det.score - 0.4) / (0.9 - 0.4);
@@ -720,28 +728,16 @@ window.addEventListener('DOMContentLoaded', () => {
           const det = landUseScoreAndLabel(p);
           const zone = p.lub_zoning ?? '';
           const desc = p.lub_description ?? '';
-      
-          // HOVER (no click)
           const tip = (desc || zone || 'Land-use') + ` — ${det.label} (${det.score.toFixed(2)})`;
-          lyr.bindTooltip(tip, { permanent:false, sticky:true, direction:'top', offset:[0,-6], className:'npri-label' });
-      
-          // Optional: keep click popup
-          lyr.bindPopup(`
-            <div style="min-width:240px">
-              <strong>Land-use</strong>
-              <table style="width:100%;font-size:12px">
-                ${zone ? `<tr><td>Zone</td><td>${zone}</td></tr>` : ''}
-                ${desc ? `<tr><td>Description</td><td>${desc}</td></tr>` : ''}
-                <tr><td>Mapped class</td><td>${det.label}</td></tr>
-                <tr><td>Score</td><td><b>${det.score.toFixed(2)}</b></td></tr>
-              </table>
-            </div>
-          `);
-      
+          lyr.bindTooltip(tip, { sticky:true, direction:'top', offset:[0,-6], className:'npri-label' });
           lyr.on('mouseover', () => { lyr.setStyle({ weight:1.2, color:'#333', fillOpacity:0.45 }); lyr.bringToFront?.(); });
-          lyr.on('mouseout',  () => landDisp.resetStyle(lyr));
+          lyr.on('mouseout',  () => landFL.resetStyle(lyr));
         }
       });
+
+      
+      L.esri.query({ url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0' })
+        .bounds((err, bounds) => { if (!err && bounds) map.fitBounds(bounds.pad(0.02)); });
 
 
 
@@ -820,7 +816,7 @@ window.addEventListener('DOMContentLoaded', () => {
       bindToggle(ui.toggleFields, fieldsDisp);
       bindToggle(ui.toggleSplash, splashDisp);
       bindToggle(ui.togglePEMU,   pemuDisp);
-      bindToggle(ui.toggleLand,   landDisp);
+      bindToggle(ui.toggleLand,   landFL);
       bindToggle(ui.toggleRoads,  roadsFL);
       bindToggle(ui.toggleBldg,   bldgFL);
 
