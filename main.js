@@ -32,6 +32,25 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(()=>map.invalidateSize(),0);
   window.addEventListener('resize',()=>map.invalidateSize());
 
+  // ---- Wi-Fi buildings display layer + toggle ----
+  const wifiToggleEl = document.getElementById('toggleWifi');
+  const wifiFL = L.esri.featureLayer({
+    url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0',
+    pane: 'features',
+    pointToLayer: (geojson, latlng) =>
+      L.circleMarker(latlng, { radius: 5, weight: 1, color: '#016797', fillOpacity: 0.8 })
+  });
+  
+  // honor initial checkbox state
+  if (wifiToggleEl?.checked) wifiFL.addTo(map);
+  
+  // wire the checkbox
+  wifiToggleEl?.addEventListener('change', (e) => {
+    if (e.target.checked) wifiFL.addTo(map);
+    else map.removeLayer(wifiFL);
+  });
+
+  
   // remember last MCDA results so we can export later
   window.lastMCDA = null;
 
@@ -218,7 +237,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   
   // Wire the checkbox
-  ui.toggleNPRIwms.addEventListener('change', (e) => {
+  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
     if (e.target.checked) startNpri();
     else stopNpri();
   });
