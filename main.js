@@ -238,7 +238,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return censusFL;
   }
   
-  // Wire the sidebar controls (assumes you have #toggleCensus, #btnExportCensusTop10, #censusStats in HTML)
+  // Wire up the sidebar controls (start OFF)
   (async function wireCensusUI() {
     const toggle = document.getElementById('toggleCensus');          // unchecked in HTML
     const btn    = document.getElementById('btnExportCensusTop10');
@@ -247,7 +247,9 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       if (stats) stats.textContent = 'Loading stats…';
       await buildCensusBreaksAndStats();
-    } catch { /* stats already shows error */ }
+    } catch {
+      /* stats already shows error, continue so toggle/export still work */
+    }
   
     toggle?.addEventListener('change', async (e) => {
       if (e.target.checked) {
@@ -255,7 +257,7 @@ window.addEventListener('DOMContentLoaded', () => {
         fl.addTo(map);
         fl.bringToFront?.();
   
-        // If stats failed, build breaks from loaded features
+        // If stats failed (no breaks), build them from the features as they finish loading
         if (!censusBreaks) {
           const statsDiv = document.getElementById('censusStats');
           if (statsDiv) statsDiv.textContent = 'Building legend from loaded features…';
@@ -268,20 +270,41 @@ window.addEventListener('DOMContentLoaded', () => {
                 const d = densityFromFeature(ft);
                 if (Number.isFinite(d)) densities.push(d);
               });
+  
               const br = computeQuantileBreaks(densities);
               if (br) {
                 censusBreaks = br;
+  
                 fl.setStyle(feature => {
                   const d = densityFromFeature(feature);
                   return { color:'#555', weight:0.6, fillColor: colorForDensity(d), fillOpacity:0.65 };
                 });
+  
+                const fmt0 = n => Number.isFinite(n) ? n.toFixed(0) : '—';
+                if (statsDiv) {
+                  statsDiv.innerHTML = `
+                    <div><b>Legend (people/km²)</b></div>
+                    <div style="display:grid;grid-template-columns:16px 1fr;gap:6px 8px;align-items:center;margin-top:4px">
+                      ${[0,1,2,3,4,5].map(i=>{
+                        const labels = [
+                          `≤ ${fmt0(censusBreaks[0])}`,
+                          `${fmt0(censusBreaks[0])}–${fmt0(censusBreaks[1])}`,
+                          `${fmt0(censusBreaks[1])}–${fmt0(censusBreaks[2])}`,
+                          `${fmt0(censusBreaks[2])}–${fmt0(censusBreaks[3])}`,
+                          `${fmt0(censusBreaks[3])}–${fmt0(censusBreaks[4])}`,
+                          `> ${fmt0(censusBreaks[4])}`
+                        ];
+                        return `<span style="width:16px;height:12px;border:1px solid #555;background:${censusColors[i]}"></span><span>${labels[i]}</span>`;
+                      }).join('')}
+                    </div>`;
+                }
               } else if (statsDiv) {
                 statsDiv.textContent = 'No features available to build legend.';
               }
             } catch (err) {
               console.error(err);
-              const statsDiv = document.getElementById('censusStats');
-              if (statsDiv) statsDiv.textContent = 'Legend build failed.';
+              const statsDiv2 = document.getElementById('censusStats');
+              if (statsDiv2) statsDiv2.textContent = 'Legend build failed.';
             }
           });
         }
@@ -290,9 +313,10 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   
+    // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
       try {
-        const fc = await queryAllCensus(true);
+        const fc = await queryAllCensus(true); // geometry for robust area
         const rows = (fc.features || [])
           .map(f => {
             const p = f.properties || {};
@@ -329,6 +353,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   })();
+
 
 
   
