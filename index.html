@@ -193,105 +193,6 @@ const URLS = {
 };
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
 
-
-let npriLayer = null;
-let npriMoveHandler = null;
-let npriTip = null;
-
-function getFeatureInfoUrl(layer, latlng) {
-  const point = map.latLngToContainerPoint(latlng, map.getZoom());
-  const size = map.getSize();
-  const base = layer._url;
-  const params = {
-    request: 'GetFeatureInfo',
-    service: 'WMS',
-    version: layer.wmsParams.version || '1.3.0',
-    styles: layer.wmsParams.styles || '',
-    transparent: true,
-    format: 'image/png',
-    bbox: map.getBounds().toBBoxString(),
-    height: size.y,
-    width: size.x,
-    layers: layer.wmsParams.layers,
-    query_layers: layer.wmsParams.layers,
-    info_format: 'application/json' // try JSON first; many servers support it
-  };
-  // Pixel coords param names change between 1.1.1 and 1.3.0
-  params[params.version === '1.3.0' ? 'i' : 'x'] = Math.round(point.x);
-  params[params.version === '1.3.0' ? 'j' : 'y'] = Math.round(point.y);
-  return base + L.Util.getParamString(params, base, true);
-}
-
-function startNpriHover() {
-  if (npriLayer) return;
-
-  npriLayer = L.tileLayer.wms(NPRI_WMS_URL, {
-    layers: NPRI_WMS_LAYERS,
-    format: 'image/png',
-    transparent: true,
-    version: '1.3.0'
-  }).addTo(map);
-
-  npriTip = L.tooltip({
-    sticky: true,
-    direction: 'top',
-    offset: [0, -6],
-    className: 'npri-label'
-  });
-
-  // simple debounce so we don't hammer the server
-  let tId = null;
-  npriMoveHandler = (e) => {
-    if (tId) clearTimeout(tId);
-    tId = setTimeout(async () => {
-      try {
-        const url = getFeatureInfoUrl(npriLayer, e.latlng);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('GetFeatureInfo failed');
-        const data = await res.json();
-
-        // Try to find a feature and a few common NPRI fields
-        const feat = (data.features && data.features[0]) || null;
-        const props = feat?.properties || {};
-        const name =
-          props.FACILITY_NA || props.FACILITY_NAME || props.NAME || props.Name || 'NPRI Facility';
-        const comp =
-          props.COMPANY_NA || props.COMPANY || props.OWNER || '';
-        const city =
-          props.CITY || props.MUNICIPALITY || props.MUNICIPAL || '';
-        const naics = props.NAICS || props.NAICS_CODE || '';
-        
-        if (feat) {
-          const html = `<b>${name}</b>${comp ? `<div>${comp}</div>` : ''}${
-            city ? `<div>${city}</div>` : ''
-          }${naics ? `<div>NAICS: ${naics}</div>` : ''}`;
-          npriTip.setContent(html);
-          npriTip.setLatLng(e.latlng);
-          if (!npriTip._map) npriTip.addTo(map);
-        } else {
-          if (npriTip._map) map.removeLayer(npriTip);
-        }
-      } catch {
-        if (npriTip?._map) map.removeLayer(npriTip);
-      }
-    }, 120);
-  };
-
-map.on('mousemove', npriMoveHandler);
-} 
-
-function stopNpriHover() {
-  if (npriMoveHandler) map.off('mousemove', npriMoveHandler);
-  npriMoveHandler = null;
-  if (npriTip && npriTip._map) map.removeLayer(npriTip);
-  npriTip = null;
-  if (npriLayer) { map.removeLayer(npriLayer); npriLayer = null; }
-}
-
-
-
-
-
   
   
 /* --------------------------- START APP ---------------------------- */
@@ -415,29 +316,16 @@ window.addEventListener('DOMContentLoaded', () => {
   
 
   // --- NPRI WMS (hover via GetFeatureInfo) ---
-  const NPRI_WMS_URL = '<<YOUR_WMS_URL>>';    // e.g. 'https://.../WMSServer'
-  const NPRI_WMS_LAYERS = '<<YOUR_LAYER>>';   // e.g. 'NPRI_Facilities' or '0'
-
-  function startNpriHover() {
-    const map = window.map;
-    if (!map) return;
-    if (!NPRI_WMS_URL || !NPRI_WMS_LAYERS) return; // 👈 guard if not configured
-    if (npriLayer) return;
+  // --- NPRI WMS (hover via GetFeatureInfo) — SINGLE, CLEAN BLOCK ---
+  const NPRI_WMS_URL    = '<<YOUR_WMS_URL>>';   // e.g. 'https://example.com/arcgis/services/NPRI/MapServer/WMSServer'
+  const NPRI_WMS_LAYERS = '<<YOUR_LAYER>>';     // e.g. '0' or 'NPRI_Facilities'
   
-  npriLayer = L.tileLayer.wms(NPRI_WMS_URL, {
-    layers: NPRI_WMS_LAYERS,
-    format: 'image/png',
-    transparent: true,
-    version: '1.3.0'
-  }).addTo(map);
-
-    
   let npriLayer = null;
   let npriMoveHandler = null;
   let npriTip = null;
   
   function getFeatureInfoUrl(layer, latlng) {
-    const map = window.map; // use the global you set earlier
+    const map = window.map;
     const point = map.latLngToContainerPoint(latlng, map.getZoom());
     const size = map.getSize();
     const base = layer._url;
@@ -463,6 +351,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function startNpriHover() {
     const map = window.map;
     if (!map) return;
+    if (!NPRI_WMS_URL || !NPRI_WMS_LAYERS) return; // guard if not configured
     if (npriLayer) return;
   
     npriLayer = L.tileLayer.wms(NPRI_WMS_URL, {
@@ -472,7 +361,12 @@ window.addEventListener('DOMContentLoaded', () => {
       version: '1.3.0'
     }).addTo(map);
   
-    npriTip = L.tooltip({ sticky:true, direction:'top', offset:[0,-6], className:'npri-label' });
+    npriTip = L.tooltip({
+      sticky: true,
+      direction: 'top',
+      offset: [0, -6],
+      className: 'npri-label'
+    });
   
     let tId = null;
     npriMoveHandler = (e) => {
@@ -484,44 +378,45 @@ window.addEventListener('DOMContentLoaded', () => {
           if (!res.ok) throw new Error('GetFeatureInfo failed');
           const data = await res.json();
   
-          const feat = (data.features && data.features[0]) || null;
+          const feat  = (data.features && data.features[0]) || null;
           const props = feat?.properties || {};
-          const name = props.FACILITY_NA || props.FACILITY_NAME || props.NAME || props.Name || 'NPRI Facility';
-          const comp = props.COMPANY_NA || props.COMPANY || props.OWNER || '';
-          const city = props.CITY || props.MUNICIPALITY || props.MUNICIPAL || '';
+          const name  = props.FACILITY_NA || props.FACILITY_NAME || props.NAME || props.Name || 'NPRI Facility';
+          const comp  = props.COMPANY_NA || props.COMPANY || props.OWNER || '';
+          const city  = props.CITY || props.MUNICIPALITY || props.MUNICIPAL || '';
           const naics = props.NAICS || props.NAICS_CODE || '';
   
           if (feat) {
-            const html = `<b>${name}</b>${comp?`<div>${comp}</div>`:''}${city?`<div>${city}</div>`:''}${naics?`<div>NAICS: ${naics}</div>`:''}`;
+            const html = `<b>${name}</b>${comp ? `<div>${comp}</div>` : ''}${city ? `<div>${city}</div>` : ''}${naics ? `<div>NAICS: ${naics}</div>` : ''}`;
             npriTip.setContent(html);
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
           } else {
-            if (npriTip._map) map.removeLayer(npriTip);
+            if (npriTip?._map) map.removeLayer(npriTip);
           }
         } catch {
           if (npriTip?._map) map.removeLayer(npriTip);
         }
       }, 120);
     };
-    
-      map.on('mousemove', npriMoveHandler);
-    }
-    
-    function stopNpriHover() {
-      const map = window.map;
-      if (npriMoveHandler && map) map.off('mousemove', npriMoveHandler);
-      npriMoveHandler = null;
-      if (npriTip && npriTip._map) map.removeLayer(npriTip);
-      npriTip = null;
-      if (npriLayer && map) { map.removeLayer(npriLayer); npriLayer = null; }
-    }
-    
-    // hook the checkbox now that `ui` exists
-    ui.toggleNPRIwms.addEventListener('change', (e) => {
-      if (e.target.checked) startNpriHover();
-      else stopNpriHover();
-    });
+  
+    map.on('mousemove', npriMoveHandler);
+  }
+  
+  function stopNpriHover() {
+    const map = window.map;
+    if (npriMoveHandler && map) map.off('mousemove', npriMoveHandler);
+    npriMoveHandler = null;
+    if (npriTip && npriTip._map) map.removeLayer(npriTip);
+    npriTip = null;
+    if (npriLayer && map) { map.removeLayer(npriLayer); npriLayer = null; }
+  }
+  
+  // Wire the checkbox once ui exists:
+  ui.toggleNPRIwms.addEventListener('change', (e) => {
+    if (e.target.checked) startNpriHover();
+    else stopNpriHover();
+  });
+
 
   
 
