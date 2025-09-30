@@ -389,7 +389,12 @@ window.addEventListener('DOMContentLoaded', () => {
     topLayer = null;
     ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
   }
-  
+
+
+
+
+
+    
   // === NPRI (default symbology + HOVER identify) ===
   const NPRI_REST_URL = 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer';
   const NPRI_LAYERS   = [0];
@@ -402,7 +407,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const map = window.map;
     if (!map) return;
   
-    // add the server-rendered layer once
     if (!npriDyn) {
       npriDyn = L.esri.dynamicMapLayer({
         url: NPRI_REST_URL,
@@ -411,7 +415,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }).addTo(map);
     }
   
-    // create the tooltip once
     if (!npriTip) {
       npriTip = L.tooltip({
         sticky: true,
@@ -421,12 +424,10 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     }
   
-    // HTML escape util
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[m]));
   
-    // throttle a bit so we don’t spam requests
     let tId = null;
     npriIdentifyHandler = (e) => {
       if (tId) clearTimeout(tId);
@@ -443,8 +444,6 @@ window.addEventListener('DOMContentLoaded', () => {
             if (!f) { if (npriTip?._map) map.removeLayer(npriTip); return; }
   
             const p = f.properties || {};
-  
-            // only these 5 fields:
             const reportingYr = p.REPORTING_YEAR || p.YEAR || p.ReportingYear || '';
             const npriId      = p.NPRI_ID        || p.NPRI_NUMBER || p.NPRI || p.NPRI_NUM || '';
             const company     = p.COMPANY_NAME   || p.COMPANY_NA  || p.COMPANY || p.OWNER || '';
@@ -477,11 +476,12 @@ window.addEventListener('DOMContentLoaded', () => {
     if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
   }
   
-  // wire the checkbox (make sure your HTML has id="toggleNPRIwms")
+  // single checkbox wiring (HTML id="toggleNPRIwms")
   document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
     if (e.target.checked) startNpriHover();
     else stopNpriHover();
   });
+
 
   
     // hover; switch to 'click' if you prefer quieter identify
