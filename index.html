@@ -318,82 +318,81 @@ window.addEventListener('DOMContentLoaded', () => {
   
 
   // --- NPRI WMS (hover via GetFeatureInfo) ---
-  const NPRI_WMS_URL    =  'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
+  const NPRI_WMS_URL    = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
   const NPRI_WMS_LAYERS = '0';
   
   let npriLayer = null;
   let npriMoveHandler = null;
   let npriTip = null;
+  let npriLegend = null;
   
-  /** Build a robust GetFeatureInfo URL (handles 1.3.0 vs 1.1.1 and CRS/SRS) */
-  function getFeatureInfoUrl(layer, latlng) {
+  /* Build a 1.1.1 GetFeatureInfo URL (more compatible on this server) */
+  function getFeatureInfoUrl_111(layer, latlng) {
     const map  = window.map;
     const pt   = map.latLngToContainerPoint(latlng, map.getZoom());
     const size = map.getSize();
     const base = layer._url;
   
-    // Use layer params as the source of truth
-    const version = layer.wmsParams.version || '1.3.0';
-    const crsCode = (map.options.crs && map.options.crs.code) ? map.options.crs.code : 'EPSG:3857';
-  
     const params = {
       request: 'GetFeatureInfo',
       service: 'WMS',
-      version,
+      version: '1.1.1',
       styles: layer.wmsParams.styles || '',
       transparent: true,
       format: layer.wmsParams.format || 'image/png',
-      bbox: map.getBounds().toBBoxString(),
+      bbox: map.getBounds().toBBoxString(), // west,south,east,north (OK for 1.1.1)
       height: size.y,
       width: size.x,
       layers: layer.wmsParams.layers,
       query_layers: layer.wmsParams.layers,
-      info_format: 'application/json' // we will fall back to HTML if needed
+      // JSON often not supported here; ask for GML (XML) which is.
+      info_format: 'application/vnd.ogc.gml',
+      feature_count: 1,
+      srs: (map.options.crs && map.options.crs.code) ? map.options.crs.code : 'EPSG:3857',
+      exceptions: 'application/vnd.ogc.se_xml'
     };
   
-    // WMS 1.3.0 uses i/j + 'crs'; 1.1.1 uses x/y + 'srs'
-    if (version === '1.3.0') {
-      params.crs = crsCode;
-      params.i = Math.round(pt.x);
-      params.j = Math.round(pt.y);
-    } else {
-      params.srs = crsCode;
-      params.x = Math.round(pt.x);
-      params.y = Math.round(pt.y);
-    }
+    // 1.1.1 uses x/y for pixel coords
+    params.x = Math.round(pt.x);
+    params.y = Math.round(pt.y);
   
     return base + L.Util.getParamString(params, base, true);
   }
   
-  /** Try JSON first; if not supported, re-query as HTML and extract a simple table/text */
-  async function fetchNpriInfo(urlJSON, layer) {
-    // 1) JSON attempt
-    let res = await fetch(urlJSON);
-    if (res.ok) {
-      try {
-        const data = await res.json();
-        return { type: 'json', data };
-      } catch {}
+  /* Parse a very generic GML/XML FeatureInfo into a simple props bag */
+  function extractPropsFromGml(xmlText) {
+    const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  
+    // If the server returned an exception, bail early
+    const exc = doc.getElementsByTagName('ServiceException');
+    if (exc && exc.length) return { __error: exc[0].textContent.trim() };
+  
+    // Strategy: pick the first element that carries a bunch of attributes
+    // (ArcGIS WMS often returns a single element with attribute key/values)
+    const nodes = doc.getElementsByTagName('*');
+    let carrier = null;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.attributes && n.attributes.length > 0) { carrier = n; break; }
+    }
+    const props = {};
+    if (carrier) {
+      for (const attr of carrier.attributes) {
+        props[attr.name] = attr.value;
+      }
+    } else {
+      // fallback: try name/value pairs as text
+      props._raw = doc.documentElement ? doc.documentElement.textContent.trim() : '';
+    }
+    return props;
+  }
+  
+  function renderNpriTooltip(props) {
+    if (props.__error) {
+      return `<div style="min-width:220px"><b>NPRI Facility</b><div>${props.__error}</div></div>`;
     }
   
-    // 2) Fallback to HTML
-    const u = new URL(urlJSON);
-    u.searchParams.set('info_format', 'text/html');
-    res = await fetch(u.toString());
-    const html = res.ok ? await res.text() : null;
-    return { type: 'html', data: html };
-  }
-  
-  /** Extract best-guess fields from a WMS JSON GetFeatureInfo response */
-  function extractPropsFromJson(json) {
-    const feat = (json && json.features && json.features[0]) || null;
-    const p = feat?.properties || {};
-    return p;
-  }
-  
-  /** Render a tooltip HTML from a bag of properties */
-  function renderNpriTooltip(props) {
-    // Try a bunch of likely keys
+    // Heuristic field picks (tweak once you see the exact keys the service returns)
     const name =
       props.FACILITY_NAME || props.FACILITY_NA || props.FACILITY || props.NAME || props.Name || 'NPRI Facility';
     const comp =
@@ -403,32 +402,27 @@ window.addEventListener('DOMContentLoaded', () => {
     const npriId =
       props.NPRI_ID || props.NPRI_NUMBER || props.NPRI || props.NPRI_NUM || '';
   
-    // Build a compact top block
     let top = `<b>${name}</b>`;
-    if (comp)  top += `<div>${comp}</div>`;
-    if (city)  top += `<div>${city}</div>`;
+    if (comp)   top += `<div>${comp}</div>`;
+    if (city)   top += `<div>${city}</div>`;
     if (npriId) top += `<div><b>NPRI ID:</b> ${npriId}</div>`;
   
-    // Also list whatever other attributes are present (helps discover exact field names)
+    // Show a few more attributes to help you discover exact keys.
+    const hideKeys = new Set([
+      'FACILITY_NAME','FACILITY_NA','FACILITY','NAME','Name',
+      'COMPANY_NAME','COMPANY_NA','COMPANY','OWNER',
+      'CITY','MUNICIPALITY','MUNICIPAL',
+      'NPRI_ID','NPRI_NUMBER','NPRI','NPRI_NUM'
+    ]);
+  
     const rows = Object.entries(props)
-      .filter(([k]) => !['FACILITY_NAME','FACILITY_NA','FACILITY','NAME','Name','COMPANY_NAME','COMPANY_NA','COMPANY','OWNER','CITY','MUNICIPALITY','MUNICIPAL','NPRI_ID','NPRI_NUMBER','NPRI','NPRI_NUM'].includes(k))
-      .slice(0, 10) // don’t flood the tooltip
+      .filter(([k]) => !hideKeys.has(k))
+      .slice(0, 12)
       .map(([k,v]) => `<tr><td style="padding-right:6px">${k}</td><td>${v}</td></tr>`)
       .join('');
   
     const table = rows ? `<div style="margin-top:4px"><table style="font-size:11px">${rows}</table></div>` : '';
-  
     return `<div style="min-width:240px">${top}${table}</div>`;
-  }
-  
-  /** Extract something readable from HTML fallback (very light parsing) */
-  function extractFromHtml(html) {
-    // Many ArcGIS WMS servers return a simple <table>. Keep it basic and safe:
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    // Grab plain text for top and first table rows to show
-    const text = div.textContent.trim().replace(/\s+/g,' ');
-    return `<div style="min-width:240px"><b>NPRI Facility</b><div style="margin-top:4px">${text.substring(0, 800)}</div></div>`;
   }
   
   function startNpriHover() {
@@ -436,12 +430,30 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!map) return;
     if (npriLayer) return;
   
+    // Use 1.1.1 for tiles too (keeps params consistent with GetFeatureInfo)
     npriLayer = L.tileLayer.wms(NPRI_WMS_URL, {
       layers: NPRI_WMS_LAYERS,
       format: 'image/png',
       transparent: true,
-      version: '1.3.0' // this service supports 1.3.0
+      version: '1.1.1'
     }).addTo(map);
+  
+    // Legend image via GetLegendGraphic
+    if (!npriLegend) {
+      npriLegend = L.control({ position: 'bottomright' });
+      npriLegend.onAdd = function() {
+        const div = document.createElement('div');
+        div.style.background = '#fff';
+        div.style.padding = '6px';
+        div.style.border = '1px solid #ccc';
+        div.style.borderRadius = '6px';
+        div.style.boxShadow = '0 1px 4px rgba(0,0,0,.2)';
+        const lgURL = `${NPRI_WMS_URL}?service=WMS&request=GetLegendGraphic&version=1.1.1&format=image/png&layer=${encodeURIComponent(NPRI_WMS_LAYERS)}`;
+        div.innerHTML = `<div style="font-weight:600;margin-bottom:4px">NPRI Legend</div><img src="${lgURL}" alt="NPRI legend" style="max-width:260px;display:block">`;
+        return div;
+      };
+    }
+    npriLegend.addTo(map);
   
     npriTip = L.tooltip({
       sticky: true,
@@ -450,38 +462,30 @@ window.addEventListener('DOMContentLoaded', () => {
       className: 'npri-label'
     });
   
-    // Debounced hover to avoid hammering GetFeatureInfo
+    // Debounced hover to avoid hammering the server
     let tId = null;
     npriMoveHandler = (e) => {
       if (tId) clearTimeout(tId);
       tId = setTimeout(async () => {
         try {
-          const url = getFeatureInfoUrl(npriLayer, e.latlng);
-          const res = await fetchNpriInfo(url, npriLayer);
+          const url = getFeatureInfoUrl_111(npriLayer, e.latlng);
+          const res = await fetch(url);
+          const text = await res.text(); // GML/XML
+          const props = extractPropsFromGml(text);
+          const html  = renderNpriTooltip(props);
   
-          let html = '';
-          if (res.type === 'json') {
-            const props = extractPropsFromJson(res.data);
-            if (props && Object.keys(props).length) {
-              html = renderNpriTooltip(props);
-            }
-          }
-          if (!html && res.type === 'html' && res.data) {
-            html = extractFromHtml(res.data);
-          }
-  
-          if (html) {
+          // Show only if we actually got meaningful info
+          if (html && !/ServiceException/i.test(text)) {
             npriTip.setContent(html);
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
           } else {
             if (npriTip._map) map.removeLayer(npriTip);
           }
-        } catch (err) {
+        } catch {
           if (npriTip?._map) map.removeLayer(npriTip);
-          // console.warn('NPRI hover error', err);
         }
-      }, 150);
+      }, 180);
     };
   
     map.on('mousemove', npriMoveHandler);
@@ -494,9 +498,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (npriTip && npriTip._map) map.removeLayer(npriTip);
     npriTip = null;
     if (npriLayer && map) { map.removeLayer(npriLayer); npriLayer = null; }
+    if (npriLegend && map) { npriLegend.remove(); }
   }
   
-  // hook the checkbox you already have in the UI:
+  // your checkbox already exists; wire it here:
   ui.toggleNPRIwms.addEventListener('change', (e) => {
     if (e.target.checked) startNpriHover();
     else stopNpriHover();
