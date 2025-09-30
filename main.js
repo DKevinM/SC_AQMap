@@ -472,7 +472,7 @@ window.addEventListener('DOMContentLoaded', () => {
             npriTip.setContent(html || '<b>NPRI Facility</b>');
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
-          } 
+          }); 
       }, 120);
     };
   
