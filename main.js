@@ -442,25 +442,37 @@ window.addEventListener('DOMContentLoaded', () => {
             if (err) { if (npriTip?._map) map.removeLayer(npriTip); return; }
             const f = fc?.features?.[0];
             if (!f) { if (npriTip?._map) map.removeLayer(npriTip); return; }
-  
+          
             const p = f.properties || {};
-            const reportingYr = p.REPORTING_YEAR || p.YEAR || p.ReportingYear || '';
-            const npriId      = p.NPRI_ID        || p.NPRI_NUMBER || p.NPRI || p.NPRI_NUM || '';
-            const company     = p.COMPANY_NAME   || p.COMPANY_NA  || p.COMPANY || p.OWNER || '';
-            const facility    = p.FACILITY_NAME  || p.FACILITY_NA || p.NAME || p.Name || '';
-            const sector      = p.SECTOR         || p.SECTOR_NAME || p.Sector || '';
-  
+          
+            // helper to pick a field by regex pattern (case-insensitive)
+            const get = (obj, patterns) => {
+              const keys = Object.keys(obj || {});
+              for (const pat of patterns) {
+                const re = new RegExp(pat, 'i');
+                const k = keys.find(key => re.test(key));
+                if (k) return obj[k];
+              }
+              return '';
+            };
+          
+            const reportingYr = get(p, ['^report', 'reporting.?year', '\\byear\\b']);
+            const npriId      = get(p, ['^npri', 'npri.?id', 'npri.?number']);
+            const company     = get(p, ['company', 'owner', 'operator']);
+            const facility    = get(p, ['facility', '^name$']);
+            const sector      = get(p, ['sector']);
+          
             let html = '';
             if (reportingYr) html += `<div><b>Reporting year:</b> ${esc(reportingYr)}</div>`;
             if (npriId)      html += `<div><b>NPRI ID:</b> ${esc(npriId)}</div>`;
             if (company)     html += `<div><b>Company:</b> ${esc(company)}</div>`;
             if (facility)    html += `<div><b>Facility:</b> ${esc(facility)}</div>`;
             if (sector)      html += `<div><b>Sector:</b> ${esc(sector)}</div>`;
-  
+          
             npriTip.setContent(html || '<b>NPRI Facility</b>');
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
-          });
+          } 
       }, 120);
     };
   
@@ -751,7 +763,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
       // Display overlays (constant widths)
-      const wifiDisp  = L.geoJSON(wifi,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,weight:1,color:'#016797',fillOpacity:0.8}) });
+      const wifiDisp = L.geoJSON(wifi, {
+        pane: 'features',
+        pointToLayer: (f, ll) =>
+          L.circleMarker(ll, { radius: 5, weight: 1, color: '#016797', fillOpacity: 0.8 })
+      });
       const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
       const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
       const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
