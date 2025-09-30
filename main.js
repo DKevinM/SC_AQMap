@@ -182,7 +182,7 @@ window.addEventListener('DOMContentLoaded', () => {
             // Heuristic field picks; adjust once you see real keys:
             const name   = p.FACILITY_NAME || p.FACILITY_NA || p.NAME || p.Name || 'NPRI Facility';
             const comp   = p.COMPANY_NAME || p.COMPANY_NA || p.COMPANY || p.OWNER || '';
-            const city   = p.CITY || p.MUNICIPALITY || p.MUNICIPAL || '';
+            //const city   = p.CITY || p.MUNICIPALITY || p.MUNICIPAL || '';
             const npriId = p.NPRI_ID || p.NPRI_NUMBER || p.NPRI || p.NPRI_NUM || '';
   
             let html = `<b>${name}</b>`;
