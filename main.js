@@ -48,35 +48,22 @@ window.addEventListener('load', () => {
     onEachFeature: (f, layer) => {
       const p = f?.properties || {};
       const name = p.FacilityName || p.Facility || 'NPRI facility';
-      // Hover tooltip
-      layer.bindTooltip(name, {
-        permanent: false,
-        sticky: true,
-        direction: 'right',
-        offset: [6, 0],
-        className: 'npri-label'
-      });
-      // Click popup (add/adjust fields as desired)
-      const city   = p.City || p.Municipality || '';
-      const prov   = p.Province || p.Prov || '';
       const npriId = p.NPRI_ID || p.NPRIId || p.FacilityId || '';
-      const naics  = p.NAICS || p.NAICS_Code || '';
       const owner  = p.Owner || p.CompanyName || '';
-  
-      layer.bindPopup(`
-        <div style="min-width:240px">
-          <b>${name}</b><br/>
-          ${city ? `${city}${prov ? ', '+prov : ''}<br/>` : ''}
-          ${owner ? `<div><small>Owner: ${owner}</small></div>` : ''}
-          <table style="width:100%;font-size:12px;margin-top:4px">
-            ${npriId ? `<tr><td style="color:#666">NPRI ID</td><td>${npriId}</td></tr>` : ''}
-            ${naics  ? `<tr><td style="color:#666">NAICS</td><td>${naics}</td></tr>` : ''}
-          </table>
-          <div style="margin-top:6px;color:#777"><small>Hover for name • Click for details</small></div>
-        </div>
-      `);
-    }
-  });
+      // Hover tooltip
+    layer.bindTooltip(name, {
+      permanent: false, sticky: true, direction: 'right', offset: [6, 0], className: 'npri-label'
+    });
+
+    layer.bindPopup(`
+      <div style="min-width:240px">
+        <b>${name}</b><br/>
+        ${owner ? `<div><small>Owner: ${owner}</small></div>` : ''}
+        ${npriId ? `<tr><td style="color:#666">NPRI ID</td><td>${npriId}</td></tr>` : ''}
+      </div>
+    `);
+  }
+});
   
   // Keep the vector hover layer synced with the WMS checkbox
   const wmsToggle = document.getElementById('toggleNPRIwms');
