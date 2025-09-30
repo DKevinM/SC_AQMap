@@ -199,24 +199,26 @@ window.addEventListener('DOMContentLoaded', () => {
   
             const p = f.properties || {};
             // Heuristic field picks; adjust once you see real keys:
-            const name   = p.FACILITY_NAME || p.FACILITY_NA || p.NAME || p.Name || 'NPRI Facility';
-            const comp   = p.COMPANY_NAME || p.COMPANY_NA || p.COMPANY || p.OWNER || '';
-            //const city   = p.CITY || p.MUNICIPALITY || p.MUNICIPAL || '';
-            const npriId = p.NPRI_ID || p.NPRI_NUMBER || p.NPRI || p.NPRI_NUM || '';
+            const facilityName = p.FACILITY_NAME || p.FACILITY_NA || p.NAME || p.Name || '';
+            const companyName  = p.COMPANY_NAME  || p.COMPANY_NA  || p.COMPANY || p.OWNER || '';
+            const npriId       = p.NPRI_ID       || p.NPRI_NUMBER || p.NPRI    || p.NPRI_NUM || '';
+            const sector       = p.SECTOR        || p.SECTOR_NAME || p.Sector  || '';
+            const reportingYr  = p.REPORTING_YEAR|| p.YEAR        || p.ReportingYear || '';
   
-            let html = `<b>${name}</b>`;
-            if (comp)   html += `<div>${comp}</div>`;
-            if (city)   html += `<div>${city}</div>`;
-            if (npriId) html += `<div><b>NPRI ID:</b> ${npriId}</div>`;
-  
-            // Show a few extra fields to discover exact names, then we can lock them down
-            const hide = new Set(['FACILITY_NAME','FACILITY_NA','NAME','Name','COMPANY_NAME','COMPANY_NA','COMPANY','OWNER','CITY','MUNICIPALITY','MUNICIPAL','NPRI_ID','NPRI_NUMBER','NPRI','NPRI_NUM','OBJECTID','Shape']);
-            const rows = Object.entries(p).filter(([k]) => !hide.has(k)).slice(0, 12);
-            if (rows.length) {
-              html += `<div style="margin-top:4px"><table style="font-size:11px">${rows.map(([k,v])=>`<tr><td style="padding-right:6px">${k}</td><td>${v}</td></tr>`).join('')}</table></div>`;
-            }
-  
-            npriTip.setContent(html);
+            // simple HTML escape
+            const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({
+              '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+            }[m]));
+            
+            // build the compact tooltip you wanted
+            let html = '';
+            if (facilityName) html += `<div><b>Facility:</b> ${esc(facilityName)}</div>`;
+            if (companyName)  html += `<div><b>Company:</b> ${esc(companyName)}</div>`;
+            if (npriId)       html += `<div><b>NPRI ID:</b> ${esc(npriId)}</div>`;
+            if (sector)       html += `<div><b>Sector:</b> ${esc(sector)}</div>`;
+            if (reportingYr)  html += `<div><b>Reporting year:</b> ${esc(reportingYr)}</div>`;
+            
+            npriTip.setContent(html || '<b>NPRI Facility</b>');
             npriTip.setLatLng(e.latlng);
             if (!npriTip._map) npriTip.addTo(map);
           });
