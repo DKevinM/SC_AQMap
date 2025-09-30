@@ -277,8 +277,8 @@ function startNpriHover() {
     }, 120);
   };
 
-  map.on('mousemove', npriMoveHandler);
-}
+map.on('mousemove', npriMoveHandler);
+} 
 
 function stopNpriHover() {
   if (npriMoveHandler) map.off('mousemove', npriMoveHandler);
