@@ -32,15 +32,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(()=>map.invalidateSize(),0);
   window.addEventListener('resize',()=>map.invalidateSize());
 
-  // honor initial checkbox state
-  if (wifiToggleEl?.checked) wifiFL.addTo(map);
-  
-  // wire the checkbox
-  wifiToggleEl?.addEventListener('change', (e) => {
-    if (e.target.checked) wifiFL.addTo(map);
-    else map.removeLayer(wifiFL);
-  });
-
   
   // remember last MCDA results so we can export later
   window.lastMCDA = null;
