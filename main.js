@@ -486,7 +486,7 @@ window.addEventListener('DOMContentLoaded', () => {
   
     // hover; switch to 'click' if you prefer quieter identify
     map.on('mousemove', npriIdentifyHandler);
-  }
+  
   
   function stopNpri() {
     const map = window.map;
