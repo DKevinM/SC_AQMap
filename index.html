@@ -133,6 +133,24 @@
     </div>
 
     
+    <!-- preference, reuse style like Roads -->
+    <div class="group">
+      <label>Industry (NPRI) preference</label>
+      <select id="industryPref">
+        <option value="closer">Closer is better (source-oriented)</option>
+        <option value="farther">Farther is better (background)</option>
+      </select>
+    </div>
+    
+    <!-- weights row (keep with the others) -->
+    <div class="row">
+      <span class="small" style="width:110px">Industry (NPRI)</span>
+      <input type="range" id="w_ind" min="0" max="1" step="0.05" value="0.20">
+      <span id="w_ind_val" class="badge">0.20</span>
+    </div>
+
+
+    
     <!-- Land-use score legend/explanation -->
     <div class="group small">
       <b>Land-use score mapping</b>
