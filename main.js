@@ -764,9 +764,18 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Display overlays (constant widths)
       const wifiDisp = L.geoJSON(wifi, {
-        pane: 'features',
+        pane: 'markers',
         pointToLayer: (f, ll) =>
-          L.circleMarker(ll, { radius: 5, weight: 1, color: '#016797', fillOpacity: 0.8 })
+          L.circleMarker(ll, {
+            radius: 5,
+            weight: 1.5,
+            color: '#016797',
+            fillColor: '#35a7ff',
+            fillOpacity: 0.9
+          }).bindTooltip(
+            f.properties?.LOCATION || f.properties?.NAME || 'Wi-Fi',
+            { direction: 'top', offset: [0, -6] }
+          )
       });
       const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
       const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
