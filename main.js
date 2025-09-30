@@ -15,76 +15,7 @@ window.addEventListener('load', () => {
   /* ================= NPRI ================= */
 
   // NPRI facilities as WMS (visual points)
-  const NPRI_WMS = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
-  const npriFacilitiesWMS = L.tileLayer.wms(NPRI_WMS, {
-    layers: '5',
-    format: 'image/png',
-    transparent: true,
-    opacity: 0.9,
-    attribution: 'NPRI © ECCC'
-  });
-
-  const toggleWMS = document.getElementById('toggleNPRIwms');
-  if (toggleWMS) {
-    toggleWMS.addEventListener('change', e => {
-      e.target.checked ? npriFacilitiesWMS.addTo(map) : map.removeLayer(npriFacilitiesWMS);
-    });
-    if (toggleWMS.checked) npriFacilitiesWMS.addTo(map);
-  }
-
-  // --- NPRI interactive (hover + click) vector overlay ---
-  const npriFacilityInteractive = L.esri.featureLayer({
-    url: 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0',
-    pane: 'markers',        // stays above WMS
-    simplifyFactor: 0.2,
-    precision: 7,
-    pointToLayer: (_g, latlng) => L.circleMarker(latlng, {
-      radius: 6,            // bigger hit area for hover
-      weight: 0,            // invisible stroke
-      opacity: 0,
-      fillColor: '#000',
-      fillOpacity: 0.001    // nearly invisible but receives mouse events
-    }),
-    onEachFeature: (f, layer) => {
-      const p = f?.properties || {};
-      const name = p.FacilityName || p.Facility || 'NPRI facility';
-      const npriId = p.NPRI_ID || p.NPRIId || p.FacilityId || '';
-      const owner  = p.Owner || p.CompanyName || '';
-      // Hover tooltip
-    layer.bindTooltip(name, {
-      permanent: false, sticky: true, direction: 'right', offset: [6, 0], className: 'npri-label'
-    });
-
-    layer.bindPopup(`
-      <div style="min-width:240px">
-        <b>${name}</b><br/>
-        ${owner ? `<div><small>Owner: ${owner}</small></div>` : ''}
-        ${npriId ? `<tr><td style="color:#666">NPRI ID</td><td>${npriId}</td></tr>` : ''}
-      </div>
-    `);
-  }
-});
-  
-  // Keep the vector hover layer synced with the WMS checkbox
-  const wmsToggle = document.getElementById('toggleNPRIwms');
-  if (wmsToggle) {
-    const applyNPRIToggle = () => {
-        if (wmsToggle.checked) {
-          npriFacilitiesWMS.addTo(map);
-          npriFacilityInteractive.addTo(map);
-          npriFacilityInteractive.bringToFront?.();
-        } else {
-          map.removeLayer(npriFacilitiesWMS);
-          if (map.hasLayer(npriFacilityInteractive)) map.removeLayer(npriFacilityInteractive);
-        }
-      };
-      // rewire change to also control the interactive layer
-      wmsToggle.removeEventListener?.('_npriSync', applyNPRIToggle); // guard if reloaded
-      wmsToggle.addEventListener('change', applyNPRIToggle);
-      // run once on load
-      applyNPRIToggle();
-    }
-
+  // const NPRI_WMS = 'https://maps-cartes.ec.gc.ca/arcgis/services/STB_DGST/NPRI/MapServer/WMSServer';
 
 
   /* ============== 2018 Census density (OFF by default) ============== */
