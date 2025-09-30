@@ -146,8 +146,8 @@ window.addEventListener('DOMContentLoaded', () => {
     while (true) {
       const q = L.esri.query({ url: CENSUS_FS_URL })
         .where('1=1')
-        .fields(['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID','EA_NAME'])
-        .orderBy('OBJECTID', 'ASC')
+        .fields(['*'])                // safest: get all fields
+        // .orderBy('OBJECTID','ASC') // remove to avoid 400 on unknown field
         .limit(pageSize)
         .offset(offset)
         .returnGeometry(returnGeom);
@@ -155,15 +155,17 @@ window.addEventListener('DOMContentLoaded', () => {
       const fc = await new Promise((resolve, reject) =>
         q.run((err, res) => err ? reject(err) : resolve(res))
       );
+  
       const feats = (fc?.features || []);
       out.features.push(...feats);
   
-      if (feats.length < pageSize) break;
+      if (feats.length < pageSize) break; // last page
       offset += feats.length;
-      if (offset > 1_000_000) break;
+      if (offset > 1_000_000) break;      // safety
     }
     return out;
   }
+
   
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
