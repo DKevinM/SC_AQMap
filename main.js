@@ -1223,23 +1223,19 @@ window.addEventListener('DOMContentLoaded', () => {
       `# excludePEMU, ${snap.params.excludePEMU}`,
       `# cellKm, ${snap.params.cellKm}`,
       `# dMax_km, ${snap.params.dMax}`,
-      `# weights_normalized, wifi=${snap.params.weightsNormalized.wifi}; amen=${snap.params.weightsNormalized.amen}; road=${snap.params.weightsNormalized.road}; lu=${snap.params.weightsNormalized.lu}; bld=${snap.params.weightsNormalized.bld}; pop=${snap.params.weightsNormalized.pop}`,
+      `# weights_normalized, wifi=${snap.params.weightsNormalized.wifi}; amen=${snap.params.weightsNormalized.amen}; road=${snap.params.weightsNormalized.road}; lu=${snap.params.weightsNormalized.lu}; bld=${snap.params.weightsNormalized.bld}; pop=${snap.params.weightsNormalized.pop}; ind=${snap.params.weightsNormalized.ind}`,
       ''
     ].join('\n');
   
     // Columns you’ll get per candidate row:
     const header = [
-      'rank',
-      'lat','lon',
-      'score',
-      // component scores (0–1):
-      's_wifi','s_amen','s_road','s_lu','s_bld','s_pop',
-      // raw inputs that fed the scoring:
-      'dWifi_km','dAmen_km','dRoad_km','bldgCount100m',
-      'landUseLabel','landUseScore',
-      'popDensity_people_per_km2'
+      'rank','lat','lon','score',
+      's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',   // + s_ind
+      'dWifi_km','dAmen_km','dRoad_km','dInd_km',                  // + dInd_km
+      'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
     ];
-  
+
+
     let csv = header.join(',') + '\n';
   
     snap.top10.forEach((r, i) => {
@@ -1257,6 +1253,7 @@ window.addEventListener('DOMContentLoaded', () => {
         (r.components?.s_lu   ?? ''),
         (r.components?.s_bld  ?? ''),
         (r.components?.s_pop  ?? ''),
+        (r.components?.s_ind ?? ''),
         // raw inputs:
         (r.inputs?.dWifi_km ?? ''),
         (r.inputs?.dAmen_km ?? ''),
@@ -1264,7 +1261,8 @@ window.addEventListener('DOMContentLoaded', () => {
         (r.inputs?.bldgCount100m ?? ''),
         JSON.stringify(r.inputs?.landUseLabel ?? ''),
         (r.inputs?.landUseScore ?? ''),
-        (r.inputs?.popDensity ?? '')
+        (r.inputs?.popDensity ?? ''),
+        (r.inputs?.dInd_km ?? '')
       ];
   
       csv += row.join(',') + '\n';
