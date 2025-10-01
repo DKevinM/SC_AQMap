@@ -1118,8 +1118,10 @@ window.addEventListener('DOMContentLoaded', () => {
                                            : clamp((r.dAmen / dMax), 0, 1);
       const s_road = (roadsPref === 'closer') ? clamp(1 - (r.dRoad / dMax), 0, 1)
                                               : clamp((r.dRoad / dMax), 0, 1);
-      const s_ind  = (industryPref === 'closer') ? clamp(1 - (r.dInd / dMax), 0, 1)
-                                              : clamp((r.dInd / dMax), 0, 1);
+      const t = r.dInd / dMax;
+      const s_ind = (industryPref === 'closer')
+          ? clamp(1 - t, 0, 1)
+          : clamp(Math.log1p(t) / Math.log1p(1 + dMax/dMax), 0, 1); 
       const s_bld  = clamp(r.dens / denMax, 0, 1);
       const s_lu   = clamp(r.luScore, 0, 1);
       
@@ -1208,73 +1210,76 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.runBtn.addEventListener('click', recompute);
     ui.btnClear.addEventListener('click', clearResults);
   
-  function exportTop10CSV() {
-    const snap = window.lastMCDA;
-    if (!snap || !snap.top10?.length) {
-      alert('No Top 10 available yet. Click “Recompute” first.');
-      return;
-    }
-  
-    const metaLines = [
-      '# Rapid Suitability (MCDA-lite) Top 10 Export',
-      `# generated_at, ${snap.when}`,
-      `# mode, ${snap.params.mode}`,
-      `# roadsPref, ${snap.params.roadsPref}`,
-      `# excludePEMU, ${snap.params.excludePEMU}`,
-      `# cellKm, ${snap.params.cellKm}`,
-      `# dMax_km, ${snap.params.dMax}`,
-      `# weights_normalized, wifi=${snap.params.weightsNormalized.wifi}; amen=${snap.params.weightsNormalized.amen}; road=${snap.params.weightsNormalized.road}; lu=${snap.params.weightsNormalized.lu}; bld=${snap.params.weightsNormalized.bld}; pop=${snap.params.weightsNormalized.pop}; ind=${snap.params.weightsNormalized.ind}`,
-      ''
-    ].join('\n');
-  
-    // Columns you’ll get per candidate row:
-    const header = [
-      'rank','lat','lon','score',
-      's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',   // + s_ind
-      'dWifi_km','dAmen_km','dRoad_km','dInd_km',                  // + dInd_km
-      'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
-    ];
-
-
-    let csv = header.join(',') + '\n';
-  
-    snap.top10.forEach((r, i) => {
-      const coords = r.center?.geometry?.coordinates || [null, null];
-      const lat = coords[1], lon = coords[0];
-  
-      const row = [
-        i + 1,
-        lat, lon,
-        (r.score ?? ''),
-        // component scores:
-        (r.components?.s_wifi ?? ''),
-        (r.components?.s_amen ?? ''),
-        (r.components?.s_road ?? ''),
-        (r.components?.s_lu   ?? ''),
-        (r.components?.s_bld  ?? ''),
-        (r.components?.s_pop  ?? ''),
-        (r.components?.s_ind ?? ''),
-        // raw inputs:
-        (r.inputs?.dWifi_km ?? ''),
-        (r.inputs?.dAmen_km ?? ''),
-        (r.inputs?.dRoad_km ?? ''),
-        (r.inputs?.bldgCount100m ?? ''),
-        JSON.stringify(r.inputs?.landUseLabel ?? ''),
-        (r.inputs?.landUseScore ?? ''),
-        (r.inputs?.popDensity ?? ''),
-        (r.inputs?.dInd_km ?? '')
+    function exportTop10CSV() {
+      const snap = window.lastMCDA;
+      if (!snap || !snap.top10?.length) {
+        alert('No Top 10 available yet. Click “Recompute” first.');
+        return;
+      }
+    
+      const num = v => (Number.isFinite(v) ? v : (v === Infinity || v === -Infinity ? '' : ''));
+      const metaLines = [
+        '# Rapid Suitability (MCDA-lite) Top 10 Export',
+        `# generated_at, ${snap.when}`,
+        `# mode, ${snap.params.mode}`,
+        `# roadsPref, ${snap.params.roadsPref}`,
+        `# excludePEMU, ${snap.params.excludePEMU}`,
+        `# cellKm, ${snap.params.cellKm}`,
+        `# dMax_km, ${snap.params.dMax}`,
+        `# weights_normalized, wifi=${snap.params.weightsNormalized.wifi}; amen=${snap.params.weightsNormalized.amen}; road=${snap.params.weightsNormalized.road}; lu=${snap.params.weightsNormalized.lu}; bld=${snap.params.weightsNormalized.bld}; pop=${snap.params.weightsNormalized.pop}; ind=${snap.params.weightsNormalized.ind}`,
+        ''
+      ].join('\n');
+    
+      const header = [
+        'rank','lat','lon','score',
+        's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',
+        'dWifi_km','dAmen_km','dRoad_km','dInd_km',
+        'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
       ];
-  
-      csv += row.join(',') + '\n';
-    });
-  
-    const blob = new Blob([metaLines + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'strathcona_top10_mcda.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
+      let csv = header.join(',') + '\n';
+    
+      snap.top10.forEach((r, i) => {
+        const coords = r.center?.geometry?.coordinates || [null, null];
+        const lat = num(coords[1]);
+        const lon = num(coords[0]);
+    
+        const row = [
+          i + 1,
+          lat, lon,
+          num(r.score),
+    
+          // component scores
+          num(r.components?.s_wifi),
+          num(r.components?.s_amen),
+          num(r.components?.s_road),
+          num(r.components?.s_lu),
+          num(r.components?.s_bld),
+          num(r.components?.s_pop),
+          num(r.components?.s_ind),
+    
+          // raw inputs (keep order synced with header!)
+          num(r.inputs?.dWifi_km),
+          num(r.inputs?.dAmen_km),
+          num(r.inputs?.dRoad_km),
+          num(r.inputs?.dInd_km),
+    
+          num(r.inputs?.bldgCount100m),
+          JSON.stringify(r.inputs?.landUseLabel ?? ''),
+          num(r.inputs?.landUseScore),
+          num(r.inputs?.popDensity)
+        ];
+    
+        csv += row.join(',') + '\n';
+      });
+    
+      const blob = new Blob([metaLines + csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'strathcona_top10_mcda.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
   
   // Wire up the button
   document.getElementById('btnExportMCDA')?.addEventListener('click', exportTop10CSV);
