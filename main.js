@@ -528,29 +528,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
 
-  
-    // hover; switch to 'click' if you prefer quieter identify
-    map.on('mousemove', npriIdentifyHandler);
-  
-  
-  function stopNpri() {
-    const map = window.map;
-    if (npriIdentifyHandler && map) map.off('mousemove', npriIdentifyHandler);
-    npriIdentifyHandler = null;
-    if (npriTip && npriTip._map) map.removeLayer(npriTip);
-    npriTip = null;
-    if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
-  }
-  
-  // Wire the checkbox
-  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
-    if (e.target.checked) startNpri();
-    else stopNpri();
-  });
-
-
-  
-
 
   // ---------- 1) CODE MAPPING BY ZONING ----------
   const ZONING_BUCKETS = {
@@ -855,8 +832,7 @@ window.addEventListener('DOMContentLoaded', () => {
         console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
       }
 
-      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
-      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
+
       
       const npri = await fetchNpriFacilitiesFC();
       console.log('[NPRI] facilities fetched:', npri?.features?.length ?? 0);
@@ -958,6 +934,8 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
 
+      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
+      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
       
       // Streamed land-use display layer (reliable, loads by extent)
       const landFL = L.esri.featureLayer({
@@ -1031,6 +1009,9 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         CENSUS_FC = { type:'FeatureCollection', features: feats };
         console.log('[CENSUS] features:', feats.length, 'finite densities:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
+        } catch (e) {
+          console.warn('Census FC for MCDA failed; pop-density will be neutral (0.5).', e);
+        }
 
 
       
@@ -1066,6 +1047,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
+  }
     
   
 
