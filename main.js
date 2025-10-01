@@ -751,10 +751,9 @@ window.addEventListener('DOMContentLoaded', () => {
   let CENSUS_MIN = 0, CENSUS_MAX = 1;
 
 
-
   async function probeArcgisCount(url){
     const u = new URL(url);
-    // normalize to pjson count endpoint
+    // normalize to count endpoint
     u.searchParams.set('where', '1=1');
     u.searchParams.set('returnCountOnly', 'true');
     u.searchParams.set('f', 'json');
@@ -762,40 +761,51 @@ window.addEventListener('DOMContentLoaded', () => {
     const res = await fetch(u.toString());
     if (!res.ok) throw new Error(`probe HTTP ${res.status}`);
     const j = await res.json();
-    return Number(j.count||0);
+    return Number(j.count || 0);
   }
   
-  // Try the given URL; if count=0 and it looks like /FeatureServer/<id>/query,
-  // iterate id=0..9 and pick the first non-zero.
+  // Try the given URL first; if count=0, try layer ids 0..9;
+  // if still 0, flip FeatureServer<->MapServer and try 0..9 again.
+  // Returns a proper GeoJSON FeatureCollection and logs the URL it used.
   async function fetchArcgisGeoJSONSmart(url){
     try {
-      let count = await probeArcgisCount(url);
-      if (count > 0) {
-        console.log('[wifi] count via provided URL:', count);
-        return await fetchAllArcGISGeoJSON(url);
-      }
-      console.warn('[wifi] provided URL returned 0; probing layer ids 0..9');
+      const tryOne = async (u) => {
+        const c = await probeArcgisCount(u).catch(()=>0);
+        console.log('[wifi] probe', u, '→ count=', c);
+        return c > 0 ? await fetchAllArcGISGeoJSON(u) : null;
+      };
   
-      // Rewrite layer id and retry
-      const m = url.match(/(\/FeatureServer\/)(\d+)(\/query.*)$/i);
-      const base = m ? url.replace(/(\/FeatureServer\/)(\d+)(\/query.*)$/i, '$1') : null;
-      const tail = m ? url.replace(/.*\/FeatureServer\/\d+(\/query.*)$/i, '$1') : null;
+      // 1) As-is
+      let fc = await tryOne(url);
+      if (fc) { console.log('[wifi] ✓ using provided URL'); return fc; }
   
-      if (!base || !tail) {
-        console.warn('[wifi] cannot rewrite URL for probing, falling back to empty FC');
-        return { type:'FeatureCollection', features:[] };
-      }
+      // Helper: rewrite layer id in "/FeatureServer/<id>/query"
+      const m = url.match(/(\/(FeatureServer|MapServer)\/)(\d+)(\/query.*)$/i);
+      const base = m ? url.replace(/(\/(FeatureServer|MapServer)\/)(\d+)(\/query.*)$/i, '$1') : null;
+      const tail = m ? url.replace(/.*\/(FeatureServer|MapServer)\/\d+(\/query.*)$/i, '$2') : null;
+      const srv  = m ? m[2] : null;
   
-      for (let i=0;i<10;i++){
-        const tryUrl = `${base}${i}${tail}`;
-        const c = await probeArcgisCount(tryUrl).catch(()=>0);
-        console.log(`[wifi] probe layer ${i} → count=${c}`);
-        if (c>0) {
-          console.log('[wifi] using layer', i);
-          return await fetchAllArcGISGeoJSON(tryUrl);
+      // 2) Same server type, scan layer ids 0..9
+      if (base && tail) {
+        for (let i=0; i<10; i++) {
+          const u = `${base}${i}${tail}`;
+          fc = await tryOne(u);
+          if (fc) { console.log('[wifi] ✓ resolved to layer', i); return fc; }
         }
       }
-      console.warn('[wifi] all probed layers returned 0');
+  
+      // 3) Flip FeatureServer <-> MapServer and try again
+      if (srv && base && tail) {
+        const flipped = srv.toLowerCase()==='featureserver' ? 'MapServer' : 'FeatureServer';
+        const base2 = base.replace(/\/(FeatureServer|MapServer)\/$/i, `/${flipped}/`);
+        for (let i=0; i<10; i++) {
+          const u = `${base2}${i}${tail}`;
+          fc = await tryOne(u);
+          if (fc) { console.log('[wifi] ✓ resolved to', flipped, 'layer', i); return fc; }
+        }
+      }
+  
+      console.warn('[wifi] all probes returned 0 — leaving empty FC');
       return { type:'FeatureCollection', features:[] };
     } catch (e) {
       console.error('[wifi] smart fetch failed', e);
