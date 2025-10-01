@@ -80,6 +80,14 @@
     </div>
 
     <div class="group">
+      <label>Industry (NPRI) preference</label>
+      <select id="industryPref">
+        <option value="closer">Closer is better (source-oriented)</option>
+        <option value="farther">Farther is better (background)</option>
+      </select>
+    </div>
+
+    <div class="group">
       <label>Hex cell size (km)</label>
       <div class="row">
         <input type="range" id="cellkm" min="0.3" max="2.5" step="0.1" value="0.6">
@@ -102,6 +110,11 @@
       <div class="row"><span class="small" style="width:110px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
       <div class="row"><span class="small" style="width:110px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
       <div class="row"><span class="small" style="width:110px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
+      <div class="row">
+        <span class="small" style="width:110px">Industry (NPRI)</span>
+        <input type="range" id="w_ind" min="0" max="1" step="0.05" value="0.20">
+        <span id="w_ind_val" class="badge">0.20</span>
+      </div>
       <div class="small muted">Sum is normalized to 1.</div>
     </div>
 
