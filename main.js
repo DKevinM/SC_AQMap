@@ -749,13 +749,70 @@ window.addEventListener('DOMContentLoaded', () => {
     // for MCDA use across functions
   let CENSUS_FC = null;
   let CENSUS_MIN = 0, CENSUS_MAX = 1;
+
+
+
+  async function probeArcgisCount(url){
+    const u = new URL(url);
+    // normalize to pjson count endpoint
+    u.searchParams.set('where', '1=1');
+    u.searchParams.set('returnCountOnly', 'true');
+    u.searchParams.set('f', 'json');
+    u.searchParams.delete('outFields');
+    const res = await fetch(u.toString());
+    if (!res.ok) throw new Error(`probe HTTP ${res.status}`);
+    const j = await res.json();
+    return Number(j.count||0);
+  }
+  
+  // Try the given URL; if count=0 and it looks like /FeatureServer/<id>/query,
+  // iterate id=0..9 and pick the first non-zero.
+  async function fetchArcgisGeoJSONSmart(url){
+    try {
+      let count = await probeArcgisCount(url);
+      if (count > 0) {
+        console.log('[wifi] count via provided URL:', count);
+        return await fetchAllArcGISGeoJSON(url);
+      }
+      console.warn('[wifi] provided URL returned 0; probing layer ids 0..9');
+  
+      // Rewrite layer id and retry
+      const m = url.match(/(\/FeatureServer\/)(\d+)(\/query.*)$/i);
+      const base = m ? url.replace(/(\/FeatureServer\/)(\d+)(\/query.*)$/i, '$1') : null;
+      const tail = m ? url.replace(/.*\/FeatureServer\/\d+(\/query.*)$/i, '$1') : null;
+  
+      if (!base || !tail) {
+        console.warn('[wifi] cannot rewrite URL for probing, falling back to empty FC');
+        return { type:'FeatureCollection', features:[] };
+      }
+  
+      for (let i=0;i<10;i++){
+        const tryUrl = `${base}${i}${tail}`;
+        const c = await probeArcgisCount(tryUrl).catch(()=>0);
+        console.log(`[wifi] probe layer ${i} → count=${c}`);
+        if (c>0) {
+          console.log('[wifi] using layer', i);
+          return await fetchAllArcGISGeoJSON(tryUrl);
+        }
+      }
+      console.warn('[wifi] all probed layers returned 0');
+      return { type:'FeatureCollection', features:[] };
+    } catch (e) {
+      console.error('[wifi] smart fetch failed', e);
+      return { type:'FeatureCollection', features:[] };
+    }
+  }
+
+
+
+
   
   /* -------- init: fetch data for MCDA + build overlays -------- */
   async function init(){
     try {
       ui.status.textContent='Loading live layers…';
         const [wifi,play,parks,fields,splash,bldg,roads,pemu,landAll] = await Promise.all([
-          fetchAllArcGISGeoJSON(URLS.wifi),
+          fetchArcgisGeoJSONSmart(URLS.wifi),
           fetchAllArcGISGeoJSON(URLS.play),
           fetchAllArcGISGeoJSON(URLS.parks),
           fetchAllArcGISGeoJSON(URLS.fields),
