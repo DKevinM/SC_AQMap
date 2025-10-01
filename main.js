@@ -997,27 +997,37 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         const fc = await queryAllCensus(true);
         // compute density per feature & keep a tight FC for point lookups
-        const feats = (fc.features||[]).filter(f=>f && f.geometry && f.properties);
+        // keep only features with geometry + props
+        const feats = (fc.features || []).filter(f => f && f.geometry && f.properties);
+      
         const densVals = [];
-        feats.forEach(f=>{
-          const p=f.properties;
-          const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
-          const km2 = (function(){
-            const m2Attr = Number(p.Shape_Area ?? p.shape_area ?? p.SHAPE__Area ?? p.SHAPE_Area);
-            if (Number.isFinite(m2Attr) && m2Attr>0) return m2Attr/1e6;
-            try { const m2=turf.area(f); return m2>0?m2/1e6:0; } catch { return 0; }
-          })();
-          const d = km2>0 ? (tot/km2) : 0;
-          p._density = d;
-          if (Number.isFinite(d)) densVals.push(d);
+        feats.forEach(f => {
+          // robust density: compute from geometry if attribute area is bad/missing
+          const d = densityFromFeature(f); // uses areaKm2From(feature) internally
+          if (Number.isFinite(d) && d >= 0) {
+            f.properties._density = d;
+            densVals.push(d);
+          } else {
+            // guarantee _density is never Infinity/NaN for point lookups later
+            f.properties._density = 0;
+          }
         });
+      
         if (densVals.length) {
           CENSUS_MIN = Math.min(...densVals);
           CENSUS_MAX = Math.max(...densVals);
+        } else {
+          // fallback so s_pop becomes neutral (0.5) instead of exploding
+          CENSUS_MIN = 0;
+          CENSUS_MAX = 1;
         }
-        CENSUS_FC = { type:'FeatureCollection', features: feats };
-      } catch(e) {
+      
+        CENSUS_FC = { type: 'FeatureCollection', features: feats };
+      } catch (e) {
         console.warn('Census FC for MCDA failed; pop-density weight will act as neutral.', e);
+        CENSUS_FC = { type: 'FeatureCollection', features: [] };
+        CENSUS_MIN = 0;
+        CENSUS_MAX = 1;
       }
 
 
@@ -1057,14 +1067,29 @@ window.addEventListener('DOMContentLoaded', () => {
     
   }
 
-  function popDensityAtPoint(pt, censusFC){
+  function popDensityAtPoint(pt, censusFC) {
     if (!censusFC || !censusFC.features?.length) return null;
+  
     for (const f of censusFC.features) {
-      try { if (turf.booleanPointInPolygon(pt, f)) return Number(f.properties?._density) || 0; }
-      catch {}
+      try {
+        if (!f || !f.geometry) continue;
+        if (turf.booleanPointInPolygon(pt, f)) {
+          let d = Number(f.properties?._density);
+          if (!Number.isFinite(d) || d < 0) {
+            d = densityFromFeature(f);               // robust recompute
+            if (Number.isFinite(d) && d >= 0) {
+              f.properties._density = d;             // cache for next time
+            } else {
+              return null;                           // force neutral later
+            }
+          }
+          return d;
+        }
+      } catch { /* skip bad geom */ }
     }
-    return null; // if not found, treat as neutral later
+    return null; // not found → neutral later
   }
+
   
   /* --------------------------- SCORING ------------------------------ */
   function recompute(){
@@ -1209,6 +1234,11 @@ window.addEventListener('DOMContentLoaded', () => {
     /* -------- wire up + go -------- */
     ui.runBtn.addEventListener('click', recompute);
     ui.btnClear.addEventListener('click', clearResults);
+
+
+
+
+
   
     function exportTop10CSV() {
       const snap = window.lastMCDA;
@@ -1217,7 +1247,18 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
     
-      const num = v => (Number.isFinite(v) ? v : (v === Infinity || v === -Infinity ? '' : ''));
+      // helper: safe number, keep 0, round a bit
+      const fmt = v => Number.isFinite(v) ? +(+v).toFixed(6) : '';
+    
+      // fallback: compute population density right now for a point
+      function pdAtPointNow(center) {
+        try {
+          // reuse the same function + prebuilt FC from recompute()
+          const pd = popDensityAtPoint(center, CENSUS_FC); // might be null
+          return Number.isFinite(pd) ? pd : null;
+        } catch { return null; }
+      }
+    
       const metaLines = [
         '# Rapid Suitability (MCDA-lite) Top 10 Export',
         `# generated_at, ${snap.when}`,
@@ -1239,34 +1280,37 @@ window.addEventListener('DOMContentLoaded', () => {
       let csv = header.join(',') + '\n';
     
       snap.top10.forEach((r, i) => {
-        const coords = r.center?.geometry?.coordinates || [null, null];
-        const lat = num(coords[1]);
-        const lon = num(coords[0]);
+        const coords = r.center?.geometry?.coordinates || [NaN, NaN];
+        const lat = coords[1], lon = coords[0];
+    
+        // ensure we have a finite pd; if not, recompute right now
+        let pd = r.inputs?.popDensity;
+        if (!Number.isFinite(pd)) pd = pdAtPointNow(r.center);
     
         const row = [
           i + 1,
-          lat, lon,
-          num(r.score),
+          fmt(lat), fmt(lon),
+          fmt(r.score),
     
-          // component scores
-          num(r.components?.s_wifi),
-          num(r.components?.s_amen),
-          num(r.components?.s_road),
-          num(r.components?.s_lu),
-          num(r.components?.s_bld),
-          num(r.components?.s_pop),
-          num(r.components?.s_ind),
+          // components
+          fmt(r.components?.s_wifi),
+          fmt(r.components?.s_amen),
+          fmt(r.components?.s_road),
+          fmt(r.components?.s_lu),
+          fmt(r.components?.s_bld),
+          fmt(r.components?.s_pop),
+          fmt(r.components?.s_ind),
     
-          // raw inputs (keep order synced with header!)
-          num(r.inputs?.dWifi_km),
-          num(r.inputs?.dAmen_km),
-          num(r.inputs?.dRoad_km),
-          num(r.inputs?.dInd_km),
+          // inputs
+          fmt(r.inputs?.dWifi_km),
+          fmt(r.inputs?.dAmen_km),
+          fmt(r.inputs?.dRoad_km),
+          fmt(r.inputs?.dInd_km),
     
-          num(r.inputs?.bldgCount100m),
+          fmt(r.inputs?.bldgCount100m),
           JSON.stringify(r.inputs?.landUseLabel ?? ''),
-          num(r.inputs?.landUseScore),
-          num(r.inputs?.popDensity)
+          fmt(r.inputs?.landUseScore),
+          fmt(pd)
         ];
     
         csv += row.join(',') + '\n';
@@ -1279,6 +1323,7 @@ window.addEventListener('DOMContentLoaded', () => {
       a.click();
       URL.revokeObjectURL(a.href);
     }
+
 
   
   // Wire up the button
