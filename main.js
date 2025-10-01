@@ -766,6 +766,13 @@ window.addEventListener('DOMContentLoaded', () => {
           fetchAllArcGISGeoJSON(URLS.land)   
         ]);
 
+      
+      console.log('[wifi] features:', wifi?.features?.length || 0, 'geom:', wifi?.features?.[0]?.geometry?.type);
+      if (!wifi?.features?.length) {
+        console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
+      }
+
+      
       const npri = await fetchNpriFacilitiesFC();
 
 
@@ -786,20 +793,44 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
       // Display overlays (constant widths)
-      const wifiDisp = L.geoJSON(wifi, {
-        pane: 'markers',
-        pointToLayer: (f, ll) =>
-          L.circleMarker(ll, {
-            radius: 5,
-            weight: 1.5,
-            color: '#016797',
-            fillColor: '#35a7ff',
-            fillOpacity: 0.9
-          }).bindTooltip(
-            f.properties?.LOCATION || f.properties?.NAME || 'Wi-Fi',
-            { direction: 'top', offset: [0, -6] }
-          )
-      });
+      const wifiDisp = (() => {
+        if (!wifi || !wifi.features?.length) return L.layerGroup(); // nothing to show; toggle won’t explode
+      
+        // If the layer is points: draw circles. If polygons: draw filled outlines.
+        const firstType = wifi.features[0]?.geometry?.type || '';
+        const isPointy = firstType === 'Point' || firstType === 'MultiPoint';
+      
+        if (isPointy) {
+          return L.geoJSON(wifi, {
+            pane: 'markers',
+            pointToLayer: (f, ll) => L.circleMarker(ll, {
+              radius: 5,
+              weight: 1.5,
+              color: '#016797',
+              fillColor: '#35a7ff',
+              fillOpacity: 0.9
+            }).bindTooltip(
+              f.properties?.LOCATION || f.properties?.NAME || f.properties?.Building || 'Wi-Fi',
+              { direction: 'top', offset: [0, -6] }
+            )
+          });
+        } else {
+          return L.geoJSON(wifi, {
+            pane: 'features',
+            style: () => ({
+              color: '#016797',
+              weight: 1,
+              fillColor: '#35a7ff',
+              fillOpacity: 0.25
+            }),
+            onEachFeature: (f, lyr) => {
+              const p = f.properties || {};
+              const label = p.LOCATION || p.NAME || p.Building || 'Wi-Fi';
+              lyr.bindTooltip(label, { direction: 'top', offset: [0, -6] });
+            }
+          });
+        }
+      })();
       const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
       const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
       const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
