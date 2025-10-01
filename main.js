@@ -64,14 +64,20 @@ window.addEventListener('DOMContentLoaded', () => {
     togglePEMU: togglePEMU,
     toggleLand: toggleLand,
     toggleNPRIwms: toggleNPRIwms,
+    industryPref: industryPref,
+    w_ind: w_ind, w_ind_val: w_ind_val,
     runBtn: runBtn,
     status: status,
     lu_readout: lu_readout,
     btnClear: btnClear,
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
-  [['cellkm','cellkm_val'],['dmax','dmax_val'],['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val']].forEach(([a,b])=>hookRange(ui[a],ui[b]));
-  
+  [['cellkm','cellkm_val'],['dmax','dmax_val'],
+   ['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],
+   ['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val'],
+   ['w_ind','w_ind_val']
+  ].forEach(([a,b])=>hookRange(ui[a],ui[b]));
+
   
   
   /* -------- helpers -------- */
@@ -398,6 +404,17 @@ window.addEventListener('DOMContentLoaded', () => {
   // === NPRI (default symbology + HOVER identify) ===
   const NPRI_REST_URL = 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer';
   const NPRI_LAYERS   = [0];
+  
+  async function fetchNpriFacilitiesFC() {
+    return await new Promise((resolve, reject) => {
+      L.esri.query({ url: `${NPRI_REST_URL}/0` })
+        .where('1=1')
+        .fields(['*'])
+        .returnGeometry(true)
+        .run((err, fc) => err ? reject(err) : resolve(fc));
+    });
+  }
+
   
   let npriDyn = null;              // server-rendered layer (keeps the original legend)
   let npriTip = null;              // Leaflet tooltip for hover
@@ -749,6 +766,9 @@ window.addEventListener('DOMContentLoaded', () => {
           fetchAllArcGISGeoJSON(URLS.land)   
         ]);
 
+      const npri = await fetchNpriFacilitiesFC();
+
+
       const amenities = {
         type:'FeatureCollection',
         features:[]
@@ -759,7 +779,10 @@ window.addEventListener('DOMContentLoaded', () => {
       };
       const bldgCentroids = { type:'FeatureCollection', features:bldg.features.map(f=>turf.centroid(f)) };
 
-      LAYERS = { wifi, play, parks, fields, splash, amenities, bldgPolys:bldg, bldgCentroids, roads, pemu, land: landAll };
+      LAYERS = { wifi, play, parks, fields, splash, amenities,
+                 bldgPolys: bldg, bldgCentroids, roads, pemu, land: landAll,
+                 npri };
+
 
 
       // Display overlays (constant widths)
@@ -956,17 +979,23 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.status.innerHTML='<span class="muted">Computing…</span>';
 
     const cellKm = +ui.cellkm.value, dMax = +ui.dmax.value;
-    const mode = ui.mode.value, roadsPref = ui.roadsPref.value, excludePEMU = ui.excludePEMU.checked;
+    const mode = ui.mode.value,
+          roadsPref = ui.roadsPref.value,
+          industryPref = ui.industryPref.value,
+          excludePEMU = ui.excludePEMU.checked;
+
 
     let w = {
       wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value,
-      lu:+ui.w_lu.value, bld:+ui.w_bld.value, pop:+ui.w_pop.value
+      lu:+ui.w_lu.value, bld:+ui.w_bld.value, pop:+ui.w_pop.value,
+      ind:+ui.w_ind.value
     };
+
     const s = Object.values(w).reduce((a,b)=>a+b,0)||1;
     Object.keys(w).forEach(k=>w[k]=w[k]/s);
 
 
-    const { wifi, amenities, bldgCentroids, roads, pemu, land } = LAYERS;
+    const { wifi, amenities, bldgCentroids, roads, pemu, land, npri } = LAYERS;
     const bbox = turf.bbox(land);
     const hex = turf.hexGrid(bbox, cellKm, { units:'kilometers' });
 
@@ -976,12 +1005,16 @@ window.addEventListener('DOMContentLoaded', () => {
       const dWifi = distanceToFeaturesKm(center, wifi);
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
+      const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
       const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
       const allowed = excludePEMU && pointInAnyPolygon(center, pemu) ? 0 : 1;
-      raw.push({ cell, center, dWifi, dAmen, dRoad, dens, luScore:luDet.score, luLabel:luDet.label, pd, allowed });
+      raw.push({
+        cell, center, dWifi, dAmen, dRoad, dInd, dens,
+        luScore: luDet.score, luLabel: luDet.label, pd, allowed
+      });
     }
 
     const denMax = Math.max(1, maxBldDen);
@@ -991,8 +1024,11 @@ window.addEventListener('DOMContentLoaded', () => {
                                            : clamp((r.dAmen / dMax), 0, 1);
       const s_road = (roadsPref === 'closer') ? clamp(1 - (r.dRoad / dMax), 0, 1)
                                               : clamp((r.dRoad / dMax), 0, 1);
+      const s_ind  = (industryPref === 'closer') ? clamp(1 - (r.dInd / dMax), 0, 1)
+                                              : clamp((r.dInd / dMax), 0, 1);
       const s_bld  = clamp(r.dens / denMax, 0, 1);
       const s_lu   = clamp(r.luScore, 0, 1);
+      
     
       let s_pop;
       if (r.pd == null || !isFinite(r.pd) || CENSUS_MAX <= CENSUS_MIN) {
@@ -1002,11 +1038,12 @@ window.addEventListener('DOMContentLoaded', () => {
         s_pop = (mode === 'exposure') ? t : (1 - t);
       }
     
-      r.components = { s_wifi, s_amen, s_road, s_bld, s_lu, s_pop };
+      r.components = { s_wifi, s_amen, s_road, s_bld, s_lu, s_pop, s_ind };
       r.inputs = {
         dWifi_km: r.dWifi,
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
+        dInd_km:  r.dInd, 
         bldgCount100m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
@@ -1014,7 +1051,8 @@ window.addEventListener('DOMContentLoaded', () => {
       };
     
       r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road +
-                   w.lu*s_lu + w.bld*s_bld + w.pop*s_pop;
+                   w.lu*s_lu + w.bld*s_bld + w.pop*s_pop +
+                   w.ind*s_ind;
       r.score = r.scoreRaw * r.allowed;
     }
 
@@ -1023,7 +1061,14 @@ window.addEventListener('DOMContentLoaded', () => {
     const minS = Math.min(...raw.map(r=>r.score)), maxS = Math.max(...raw.map(r=>r.score));
     const colorFor=s=>{ const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
 
-    hex.features.forEach((f,i)=>{ const r=raw[i]; f.properties={ score:+r.score.toFixed(3), lu_score:+r.luScore.toFixed(2), lu_label:r.luLabel }; });
+    hex.features.forEach((f,i)=>{ const r=raw[i];
+      f.properties = {
+        score:+r.score.toFixed(3),
+        lu_score:+r.luScore.toFixed(2),
+        lu_label:r.luLabel,
+        d_ind_km:+r.dInd.toFixed(3) // optional
+      };
+    });
 
     if (hexLayer) map.removeLayer(hexLayer);
     hexLayer = L.geoJSON(hex, {
