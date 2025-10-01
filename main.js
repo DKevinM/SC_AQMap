@@ -1067,7 +1067,7 @@ window.addEventListener('DOMContentLoaded', () => {
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
     
-  }
+  
 
   function popDensityAtPoint(pt, censusFC) {
     if (!censusFC || !censusFC.features?.length) return null;
