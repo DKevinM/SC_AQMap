@@ -860,6 +860,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
       // Display overlays (constant widths)
+      const wifiFL = L.esri.featureLayer({
+        url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0',
+        pane: 'markers',
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+          radius: 5, weight: 1.5, color: '#016797', fillColor: '#35a7ff', fillOpacity: 0.9
+        }),
+        style: () => ({ color: '#016797' }) // if it turns out to be polygons in the future
+      }).on('load', e => {
+        console.log('[wifi] featureLayer loaded count:', Object.keys(wifiFL._layers || {}).length);
+      });
       const wifiDisp = (() => {
         if (!wifi || !wifi.features?.length) return L.layerGroup(); // nothing to show; toggle won’t explode
       
@@ -1041,7 +1051,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (el.checked) { layer.addTo(map); layer.bringToFront?.(); }
         el.addEventListener('change', e => e.target.checked ? layer.addTo(map).bringToFront?.() : map.removeLayer(layer));
       }
-      bindToggle(ui.toggleWifi,   wifiDisp);
+      bindToggle(ui.toggleWifi,   wifiFL);
       bindToggle(ui.togglePlay,   playDisp);
       bindToggle(ui.toggleParks,  parksDisp);
       bindToggle(ui.toggleFields, fieldsDisp);
