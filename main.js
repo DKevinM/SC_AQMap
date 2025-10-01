@@ -839,6 +839,8 @@ window.addEventListener('DOMContentLoaded', () => {
         console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
       }
 
+      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
+      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
       
       const npri = await fetchNpriFacilitiesFC();
 
@@ -860,54 +862,38 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
       // Display overlays (constant widths)
+      // --- Wi-Fi as FeatureLayer (renders reliably) ---
       const wifiFL = L.esri.featureLayer({
         url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0',
         pane: 'markers',
         pointToLayer: (f, latlng) => L.circleMarker(latlng, {
           radius: 5, weight: 1.5, color: '#016797', fillColor: '#35a7ff', fillOpacity: 0.9
-        }),
-        style: () => ({ color: '#016797' }) // if it turns out to be polygons in the future
-      }).on('load', e => {
-        console.log('[wifi] featureLayer loaded count:', Object.keys(wifiFL._layers || {}).length);
+        }).bindTooltip(
+          f.properties?.LOCATION || f.properties?.NAME || f.properties?.Building || 'Wi-Fi',
+          { direction: 'top', offset: [0, -6] }
+        )
       });
-      const wifiDisp = (() => {
-        if (!wifi || !wifi.features?.length) return L.layerGroup(); // nothing to show; toggle won’t explode
       
-        // If the layer is points: draw circles. If polygons: draw filled outlines.
-        const firstType = wifi.features[0]?.geometry?.type || '';
-        const isPointy = firstType === 'Point' || firstType === 'MultiPoint';
+      // Promise that resolves when Wi-Fi finishes drawing
+      const wifiReady = new Promise(res => wifiFL.once('load', () => {
+        // Rehydrate LAYERS.wifi from what actually rendered so MCDA can use it
+        const feats = Object.values(wifiFL._layers || {}).map(lyr => {
+          const ft = lyr.feature;
+          if (ft?.geometry) return ft;
+          if (lyr._latlng) {
+            return {
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'Point', coordinates: [lyr._latlng.lng, lyr._latlng.lat] }
+            };
+          }
+          return null;
+        }).filter(Boolean);
       
-        if (isPointy) {
-          return L.geoJSON(wifi, {
-            pane: 'markers',
-            pointToLayer: (f, ll) => L.circleMarker(ll, {
-              radius: 5,
-              weight: 1.5,
-              color: '#016797',
-              fillColor: '#35a7ff',
-              fillOpacity: 0.9
-            }).bindTooltip(
-              f.properties?.LOCATION || f.properties?.NAME || f.properties?.Building || 'Wi-Fi',
-              { direction: 'top', offset: [0, -6] }
-            )
-          });
-        } else {
-          return L.geoJSON(wifi, {
-            pane: 'features',
-            style: () => ({
-              color: '#016797',
-              weight: 1,
-              fillColor: '#35a7ff',
-              fillOpacity: 0.25
-            }),
-            onEachFeature: (f, lyr) => {
-              const p = f.properties || {};
-              const label = p.LOCATION || p.NAME || p.Building || 'Wi-Fi';
-              lyr.bindTooltip(label, { direction: 'top', offset: [0, -6] });
-            }
-          });
-        }
-      })();
+        LAYERS.wifi = { type: 'FeatureCollection', features: feats };
+        console.log('[wifi] loaded features:', feats.length);
+        res();
+      }));
       const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
       const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
       const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
@@ -1230,7 +1216,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   
     const metaLines = [
-      '# Rapid Suitability (MCDA-lite) — Top 10 Export',
+      '# Rapid Suitability (MCDA-lite) Top 10 Export',
       `# generated_at, ${snap.when}`,
       `# mode, ${snap.params.mode}`,
       `# roadsPref, ${snap.params.roadsPref}`,
