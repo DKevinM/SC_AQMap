@@ -934,8 +934,11 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
-      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
+      if (ui.toggleWifi?.checked) {
+        wifiFL.addTo(map);
+        try { await wifiReady; } catch {}
+      }
+
       
       // Streamed land-use display layer (reliable, loads by extent)
       const landFL = L.esri.featureLayer({
