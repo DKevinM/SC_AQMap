@@ -101,7 +101,23 @@ window.addEventListener('DOMContentLoaded', () => {
     return { type:'FeatureCollection', features: all };
   }
 
+  function finiteDensityFromFeature(f) {
+    try {
+      const p = f?.properties || {};
+      const tot = Number(p.tot_pop ?? p.TOT_POP ?? 0);
+      // prefer geometry area for robustness
+      let km2 = 0;
+      try { km2 = turf.area(f) / 1e6; } catch {}
+      if (!isFinite(km2) || km2 <= 0) {
+        const m2Attr = Number(p.Shape_Area ?? p.shape_area ?? p.SHAPE__Area ?? p.SHAPE_Area);
+        if (isFinite(m2Attr) && m2Attr > 0) km2 = m2Attr / 1e6;
+      }
+      const d = km2 > 0 ? (tot / km2) : NaN;
+      return isFinite(d) ? d : null;
+    } catch { return null; }
+  }
 
+  
   /* ============== 2018 Census density (OFF by default) ============== */
 
   const CENSUS_FS_URL =
@@ -843,6 +859,10 @@ window.addEventListener('DOMContentLoaded', () => {
       try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
       
       const npri = await fetchNpriFacilitiesFC();
+      console.log('[NPRI] facilities fetched:', npri?.features?.length ?? 0);
+      if (!npri?.features?.length) {
+        console.warn('[NPRI] 0 features — s_ind will default to 1.0 (farther is better) because dInd ~= 999 km');
+      }
 
 
       const amenities = {
@@ -998,37 +1018,19 @@ window.addEventListener('DOMContentLoaded', () => {
         const fc = await queryAllCensus(true);
         // compute density per feature & keep a tight FC for point lookups
         // keep only features with geometry + props
-        const feats = (fc.features || []).filter(f => f && f.geometry && f.properties);
-      
+        const feats = (fc.features||[]).filter(f=>f && f.geometry && f.properties);
         const densVals = [];
         feats.forEach(f => {
-          // robust density: compute from geometry if attribute area is bad/missing
-          const d = densityFromFeature(f); // uses areaKm2From(feature) internally
-          if (Number.isFinite(d) && d >= 0) {
-            f.properties._density = d;
-            densVals.push(d);
-          } else {
-            // guarantee _density is never Infinity/NaN for point lookups later
-            f.properties._density = 0;
-          }
+          const d = finiteDensityFromFeature(f);
+          f.properties._density = d;        // may be null
+          if (d != null) densVals.push(d);
         });
-      
         if (densVals.length) {
           CENSUS_MIN = Math.min(...densVals);
           CENSUS_MAX = Math.max(...densVals);
-        } else {
-          // fallback so s_pop becomes neutral (0.5) instead of exploding
-          CENSUS_MIN = 0;
-          CENSUS_MAX = 1;
         }
-      
-        CENSUS_FC = { type: 'FeatureCollection', features: feats };
-      } catch (e) {
-        console.warn('Census FC for MCDA failed; pop-density weight will act as neutral.', e);
-        CENSUS_FC = { type: 'FeatureCollection', features: [] };
-        CENSUS_MIN = 0;
-        CENSUS_MAX = 1;
-      }
+        CENSUS_FC = { type:'FeatureCollection', features: feats };
+        console.log('[CENSUS] features:', feats.length, 'finite densities:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
 
 
       
@@ -1287,31 +1289,32 @@ window.addEventListener('DOMContentLoaded', () => {
         let pd = r.inputs?.popDensity;
         if (!Number.isFinite(pd)) pd = pdAtPointNow(r.center);
     
-        const row = [
-          i + 1,
-          fmt(lat), fmt(lon),
-          fmt(r.score),
-    
-          // components
-          fmt(r.components?.s_wifi),
-          fmt(r.components?.s_amen),
-          fmt(r.components?.s_road),
-          fmt(r.components?.s_lu),
-          fmt(r.components?.s_bld),
-          fmt(r.components?.s_pop),
-          fmt(r.components?.s_ind),
-    
-          // inputs
-          fmt(r.inputs?.dWifi_km),
-          fmt(r.inputs?.dAmen_km),
-          fmt(r.inputs?.dRoad_km),
-          fmt(r.inputs?.dInd_km),
-    
-          fmt(r.inputs?.bldgCount100m),
-          JSON.stringify(r.inputs?.landUseLabel ?? ''),
-          fmt(r.inputs?.landUseScore),
-          fmt(pd)
-        ];
+      const row = [
+        i + 1,
+        lat, lon,
+        (r.score ?? ''),
+      
+        // component scores (already 0–1):
+        (r.components?.s_wifi ?? ''),
+        (r.components?.s_amen ?? ''),
+        (r.components?.s_road ?? ''),
+        (r.components?.s_lu   ?? ''),
+        (r.components?.s_bld  ?? ''),
+        (r.components?.s_pop  ?? ''),
+        (r.components?.s_ind  ?? ''),
+      
+        // raw inputs:
+        isFinite(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
+        isFinite(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
+        isFinite(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
+        isFinite(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',   // ← keep it if we have it
+        (r.inputs?.bldgCount100m ?? ''),
+        JSON.stringify(r.inputs?.landUseLabel ?? ''),
+        (r.inputs?.landUseScore ?? ''),
+      
+        // pop density only if finite
+        (isFinite(r.inputs?.popDensity) ? r.inputs.popDensity : '')
+      ];
     
         csv += row.join(',') + '\n';
       });
