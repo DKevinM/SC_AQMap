@@ -110,13 +110,6 @@
       <div class="row"><span class="small" style="width:110px">Roads proximity</span><input type="range" id="w_road" min="0" max="1" step="0.05" value="0.20"><span id="w_road_val" class="badge">0.20</span></div>
       <div class="row"><span class="small" style="width:110px">Land-use score</span><input type="range" id="w_lu" min="0" max="1" step="0.05" value="0.20"><span id="w_lu_val" class="badge">0.20</span></div>
       <div class="row"><span class="small" style="width:110px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
-      <div class="group">
-        <label>Industry (NPRI) preference</label>
-        <select id="industryPref">
-          <option value="closer">Closer is better</option>
-          <option value="farther">Farther is better</option>
-        </select>
-      </div>
       <div class="small muted">Sum is normalized to 1.</div>
     </div>
 
@@ -147,15 +140,6 @@
       </div>
     </div>
 
-    
-    <!-- preference, reuse style like Roads -->
-    <div class="group">
-      <label>Industry (NPRI) preference</label>
-      <select id="industryPref">
-        <option value="closer">Closer is better (source-oriented)</option>
-        <option value="farther">Farther is better (background)</option>
-      </select>
-    </div>
     
     <!-- weights row (keep with the others) -->
     <div class="row">
