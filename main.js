@@ -184,6 +184,48 @@ window.addEventListener('DOMContentLoaded', () => {
     return out;
   }
 
+
+  async function loadCensusForMcda() {
+    const pageSize = 2000;
+    let offset = 0;
+    const feats = [];
+  
+    while (true) {
+      const q = L.esri.query({ url: CENSUS_FS_URL })
+        .where('1=1')
+        .fields(['*'])                  // grab all; we compute density ourselves
+        .returnGeometry(true)
+        .limit(pageSize)
+        .offset(offset);
+  
+      const fc = await new Promise((resolve, reject) =>
+        q.run((err, res) => err ? reject(err) : resolve(res))
+      );
+  
+      const batch = fc?.features || [];
+      feats.push(...batch);
+      if (batch.length < pageSize) break;
+      offset += batch.length;
+    }
+  
+    // compute density & min/max
+    const densVals = [];
+    feats.forEach(f => {
+      const d = finiteDensityFromFeature(f);
+      f.properties._density = Number.isFinite(d) ? d : null;
+      if (Number.isFinite(d)) densVals.push(d);
+    });
+  
+    CENSUS_FC  = { type: 'FeatureCollection', features: feats };
+    CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
+    CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
+  
+    console.log('[CENSUS][MCDA] features:', feats.length,
+                'finite:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
+  }
+
+
+  
   
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
@@ -833,7 +875,7 @@ window.addEventListener('DOMContentLoaded', () => {
       
       console.log('[wifi] features:', wifi?.features?.length || 0, 'geom:', wifi?.features?.[0]?.geometry?.type);
       if (!wifi?.features?.length) {
-        console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
+        // harmless: the FL below will rehydrate actual points and overwrite LAYERS.wifi
       }
 
 
@@ -940,8 +982,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (ui.toggleWifi?.checked) wifiFL.addTo(map);
       await wifiReady; 
+      await loadCensusForMcda(); 
 
-      await loadCensusForMcda();
 
       
       // Streamed land-use display layer (reliable, loads by extent)
@@ -970,46 +1012,6 @@ window.addEventListener('DOMContentLoaded', () => {
       
       L.esri.query({ url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0' })
         .bounds((err, bounds) => { if (!err && bounds) map.fitBounds(bounds.pad(0.02)); });
-
-
-      async function loadCensusForMcda() {
-        const pageSize = 2000;
-        let offset = 0;
-        const feats = [];
-      
-        while (true) {
-          const q = L.esri.query({ url: CENSUS_FS_URL })
-            .where('1=1')
-            .fields(['*'])                  // grab all; we compute density ourselves
-            .returnGeometry(true)
-            .limit(pageSize)
-            .offset(offset);
-      
-          const fc = await new Promise((resolve, reject) =>
-            q.run((err, res) => err ? reject(err) : resolve(res))
-          );
-      
-          const batch = fc?.features || [];
-          feats.push(...batch);
-          if (batch.length < pageSize) break;
-          offset += batch.length;
-        }
-      
-        // compute density & min/max
-        const densVals = [];
-        feats.forEach(f => {
-          const d = finiteDensityFromFeature(f);
-          f.properties._density = Number.isFinite(d) ? d : null;
-          if (Number.isFinite(d)) densVals.push(d);
-        });
-      
-        CENSUS_FC  = { type: 'FeatureCollection', features: feats };
-        CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
-        CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
-      
-        console.log('[CENSUS][MCDA] features:', feats.length,
-                    'finite:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
-      }
 
 
 
