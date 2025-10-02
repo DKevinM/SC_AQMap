@@ -39,8 +39,8 @@ window.addEventListener('DOMContentLoaded', () => {
   
   /* -------- UI refs -------- */
   const ui = {
-    mode: mode,
-    roadsPref: roadsPref,
+    mode: document.getElementById('mode'),
+    roadsPref: document.getElementById('roadsPref'),
     cellkm: cellkm, cellkm_val: cellkm_val,
     dmax: dmax, dmax_val: dmax_val,
     w_wifi: w_wifi, w_wifi_val: w_wifi_val,
@@ -54,7 +54,7 @@ window.addEventListener('DOMContentLoaded', () => {
     toggleStations: toggleStations,
     toggleHex: toggleHex,
     toggleTop: toggleTop,
-    toggleWifi: toggleWifi,
+    toggleWifi: document.getElementById('toggleWifi'),
     togglePlay: togglePlay,
     toggleParks: toggleParks,
     toggleFields: toggleFields,
@@ -62,14 +62,14 @@ window.addEventListener('DOMContentLoaded', () => {
     toggleRoads: toggleRoads,
     toggleBldg: toggleBldg,
     togglePEMU: togglePEMU,
-    toggleLand: toggleLand,
+    toggleLand: document.getElementById('toggleLand'),
     toggleNPRIwms: toggleNPRIwms,
     industryPref: industryPref,
     w_ind: w_ind, w_ind_val: w_ind_val,
-    runBtn: runBtn,
-    status: status,
-    lu_readout: lu_readout,
-    btnClear: btnClear,
+    runBtn: document.getElementById('runBtn'),
+    status: document.getElementById('status'),
+    lu_readout: document.getElementById('lu_readout'),
+    btnClear: document.getElementById('btnClear'),
   };
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],
@@ -936,10 +936,10 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('[wifi] loaded features:', feats.length);
         res();
       }));
-      const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
-      const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
-      const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
-      const splashDisp= L.geoJSON(splash,{ pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });
+      const playDisp  = L.geoJSON(play,  { pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
+      const parksDisp = L.geoJSON(parks, { pane:'features', style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
+      const fieldsDisp= L.geoJSON(fields,{ pane:'features', style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
+      const splashDisp= L.geoJSON(splash,{ pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });     
       const pemuDisp = L.geoJSON(pemu, {
         style: () => ({
           color: '#6a0080',
