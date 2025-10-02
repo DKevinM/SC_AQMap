@@ -25,8 +25,8 @@ window.addEventListener('DOMContentLoaded', () => {
   window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
   
   // Panes: tiles (200) < features (400) < suitability (410) < markers (420)
-  map.createPane('features');    map.getPane('features').style.zIndex = 400;
-  map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
+  map.createPane('features');    map.getPane('features').style.zIndex = 410;
+  map.createPane('suitability'); map.getPane('suitability').style.zIndex = 400;
   map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
 
   setTimeout(()=>map.invalidateSize(),0);
@@ -1049,9 +1049,15 @@ window.addEventListener('DOMContentLoaded', () => {
       // checkbox ↔ layer wiring
       function bindToggle(el, layer){
         if (!el || !layer) return;
-        const add = () => { layer.addTo(map); layer.bringToFront?.(); };
+        const add = () => { 
+          console.log('[toggle]', el.id, '→ add');
+          layer.addTo(map); layer.bringToFront?.();
+        };
         if (el.checked) add();
-        el.addEventListener('change', e => e.target.checked ? add() : map.removeLayer(layer));
+        el.addEventListener('change', e => {
+          console.log('[toggle]', el.id, e.target.checked ? '→ add' : '→ remove');
+          e.target.checked ? add() : map.removeLayer(layer);
+        });
       }
       bindToggle(ui.toggleWifi,   wifiFL);
       bindToggle(ui.togglePlay,   playDisp);
@@ -1065,6 +1071,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
       ui.status.textContent = 'Ready. Click Recompute.';
       appReady = true;
+
+      console.log('[ui missing]', Object.entries(ui).filter(([k,v]) => !v).map(([k])=>k));
       
     } catch(e){
       console.error(e);
@@ -1201,7 +1209,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (hexLayer) map.removeLayer(hexLayer);
     hexLayer = L.geoJSON(hex, {
       pane:'suitability',
-      style:f=>({color:'#aaa',weight:0.4,fillColor:colorFor(f.properties.score),fillOpacity:0.78})
+      style:f=>({color:'#aaa',weight:0.4,fillColor:colorFor(f.properties.score),fillOpacity:0.35})
     }).addTo(map);
     if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
 
