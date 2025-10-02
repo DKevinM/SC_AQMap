@@ -41,36 +41,52 @@ window.addEventListener('DOMContentLoaded', () => {
   const ui = {
     mode: document.getElementById('mode'),
     roadsPref: document.getElementById('roadsPref'),
-    cellkm: cellkm, cellkm_val: cellkm_val,
-    dmax: dmax, dmax_val: dmax_val,
-    w_wifi: w_wifi, w_wifi_val: w_wifi_val,
-    w_amen: w_amen, w_amen_val: w_amen_val,
-    w_road: w_road, w_road_val: w_road_val,
-    w_lu: w_lu, w_lu_val: w_lu_val,
-    w_bld: w_bld, w_bld_val: w_bld_val,
-    w_pop: w_pop, w_pop_val: w_pop_val,
-    excludePEMU: excludePEMU,
-    togglePA: togglePA,
-    toggleStations: toggleStations,
-    toggleHex: toggleHex,
-    toggleTop: toggleTop,
+    industryPref: document.getElementById('industryPref'),
+  
+    cellkm: document.getElementById('cellkm'),
+    cellkm_val: document.getElementById('cellkm_val'),
+    dmax: document.getElementById('dmax'),
+    dmax_val: document.getElementById('dmax_val'),
+  
+    w_wifi: document.getElementById('w_wifi'),
+    w_wifi_val: document.getElementById('w_wifi_val'),
+    w_amen: document.getElementById('w_amen'),
+    w_amen_val: document.getElementById('w_amen_val'),
+    w_road: document.getElementById('w_road'),
+    w_road_val: document.getElementById('w_road_val'),
+    w_lu: document.getElementById('w_lu'),
+    w_lu_val: document.getElementById('w_lu_val'),
+    w_bld: document.getElementById('w_bld'),
+    w_bld_val: document.getElementById('w_bld_val'),
+    w_pop: document.getElementById('w_pop'),
+    w_pop_val: document.getElementById('w_pop_val'),
+    w_ind: document.getElementById('w_ind'),
+    w_ind_val: document.getElementById('w_ind_val'),
+  
+    excludePEMU: document.getElementById('excludePEMU'),
+  
+    toggleHex: document.getElementById('toggleHex'),
+    toggleTop: document.getElementById('toggleTop'),
     toggleWifi: document.getElementById('toggleWifi'),
-    togglePlay: togglePlay,
-    toggleParks: toggleParks,
-    toggleFields: toggleFields,
-    toggleSplash: toggleSplash,
-    toggleRoads: toggleRoads,
-    toggleBldg: toggleBldg,
-    togglePEMU: togglePEMU,
+    togglePlay: document.getElementById('togglePlay'),
+    toggleParks: document.getElementById('toggleParks'),
+    toggleFields: document.getElementById('toggleFields'),
+    toggleSplash: document.getElementById('toggleSplash'),
+    toggleRoads: document.getElementById('toggleRoads'),
+    toggleBldg: document.getElementById('toggleBldg'),
+    togglePEMU: document.getElementById('togglePEMU'),
     toggleLand: document.getElementById('toggleLand'),
-    toggleNPRIwms: toggleNPRIwms,
-    industryPref: industryPref,
-    w_ind: w_ind, w_ind_val: w_ind_val,
+    toggleNPRIwms: document.getElementById('toggleNPRIwms'),
+    togglePA: document.getElementById('togglePA'),
+    toggleStations: document.getElementById('toggleStations'),
+  
     runBtn: document.getElementById('runBtn'),
+    btnClear: document.getElementById('btnClear'),
     status: document.getElementById('status'),
     lu_readout: document.getElementById('lu_readout'),
-    btnClear: document.getElementById('btnClear'),
   };
+
+  
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],
    ['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],
@@ -941,6 +957,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const fieldsDisp= L.geoJSON(fields,{ pane:'features', style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
       const splashDisp= L.geoJSON(splash,{ pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });     
       const pemuDisp = L.geoJSON(pemu, {
+        pane: 'features',
         style: () => ({
           color: '#6a0080',
           weight: 1.2,
@@ -1030,9 +1047,11 @@ window.addEventListener('DOMContentLoaded', () => {
       });
 
       // checkbox ↔ layer wiring
-      function bindToggle(el, layer){ if(!el) return;
-        if (el.checked) { layer.addTo(map); layer.bringToFront?.(); }
-        el.addEventListener('change', e => e.target.checked ? layer.addTo(map).bringToFront?.() : map.removeLayer(layer));
+      function bindToggle(el, layer){
+        if (!el || !layer) return;
+        const add = () => { layer.addTo(map); layer.bringToFront?.(); };
+        if (el.checked) add();
+        el.addEventListener('change', e => e.target.checked ? add() : map.removeLayer(layer));
       }
       bindToggle(ui.toggleWifi,   wifiFL);
       bindToggle(ui.togglePlay,   playDisp);
