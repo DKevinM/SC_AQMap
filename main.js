@@ -941,6 +941,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (ui.toggleWifi?.checked) wifiFL.addTo(map);
       await wifiReady; 
 
+      await loadCensusForMcda();
+
       
       // Streamed land-use display layer (reliable, loads by extent)
       const landFL = L.esri.featureLayer({
@@ -1001,9 +1003,9 @@ window.addEventListener('DOMContentLoaded', () => {
           if (Number.isFinite(d)) densVals.push(d);
         });
       
-        window.CENSUS_FC  = { type: 'FeatureCollection', features: feats };
-        window.CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
-        window.CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
+        CENSUS_FC  = { type: 'FeatureCollection', features: feats };
+        CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
+        CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
       
         console.log('[CENSUS][MCDA] features:', feats.length,
                     'finite:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
@@ -1130,7 +1132,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const t = r.dInd / dMax;
       const s_ind = (industryPref === 'closer')
           ? clamp(1 - t, 0, 1)
-          : clamp(t / 2, 0, 1); 
+          : clamp(t, 0, 1); 
       const s_bld  = clamp(r.dens / denMax, 0, 1);
       const s_lu   = clamp(r.luScore, 0, 1);
       
@@ -1149,7 +1151,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
         dInd_km:  r.dInd, 
-        bldgCount100m: r.dens,
+        bldgCount250m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
         popDensity: (r.pd ?? null)
@@ -1264,7 +1266,7 @@ window.addEventListener('DOMContentLoaded', () => {
         'rank','lat','lon','score',
         's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',
         'dWifi_km','dAmen_km','dRoad_km','dInd_km',
-        'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
+        'bldgCount250m','landUseLabel','landUseScore','popDensity_people_per_km2'
       ];
       let csv = header.join(',') + '\n';
     
@@ -1298,7 +1300,7 @@ window.addEventListener('DOMContentLoaded', () => {
         (r.inputs?.bldgCount100m ?? ''),
         JSON.stringify(r.inputs?.landUseLabel ?? ''),
         (r.inputs?.landUseScore ?? ''),
-        nfin(r.inputs?.popDensity) ? r.inputs.popDensity : ''
+        nfin(pd) ? pd : ''
       ];
 
     
