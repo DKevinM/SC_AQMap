@@ -230,8 +230,8 @@ window.addEventListener('DOMContentLoaded', () => {
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
     try {
-      const fc = await loadCensusForMcda(); 
-      const feats = fc.features.filter(f => f && f.properties && f.geometry);
+      await loadCensusForMcda(); // fills CENSUS_FC / MIN / MAX
+      const feats = (CENSUS_FC?.features || []).filter(f => f && f.properties && f.geometry);
   
       const vals = feats
         .map(f => densityFromFeature(f))
@@ -384,8 +384,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
       try {
-        const fc = await loadCensusForMcda(); 
-        const rows = (fc.features || [])
+          await loadCensusForMcda();
+          const rows = ((CENSUS_FC?.features) || [])
           .map(f => {
             const p = f.properties || {};
             const km2 = areaKm2From(f);
@@ -1299,7 +1299,7 @@ window.addEventListener('DOMContentLoaded', () => {
         nfin(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
         nfin(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
         nfin(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',
-        (r.inputs?.bldgCount100m ?? ''),
+        (r.inputs?.bldgCount250m ?? ''),
         JSON.stringify(r.inputs?.landUseLabel ?? ''),
         (r.inputs?.landUseScore ?? ''),
         nfin(pd) ? pd : ''
