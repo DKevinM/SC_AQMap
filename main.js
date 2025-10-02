@@ -188,7 +188,7 @@ window.addEventListener('DOMContentLoaded', () => {
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
     try {
-      const fc = await queryAllCensus(true); // need geometry for area
+      const fc = await loadCensusForMcda(); 
       const feats = fc.features.filter(f => f && f.properties && f.geometry);
   
       const vals = feats
@@ -334,11 +334,15 @@ window.addEventListener('DOMContentLoaded', () => {
         map.removeLayer(censusFL);
       }
     });
-  
+
+
+
+
+    
     // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
       try {
-        const fc = await queryAllCensus(true); // geometry for robust area
+        const fc = await loadCensusForMcda(); 
         const rows = (fc.features || [])
           .map(f => {
             const p = f.properties || {};
@@ -934,10 +938,8 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      if (ui.toggleWifi?.checked) {
-        wifiFL.addTo(map);
-        try { await wifiReady; } catch {}
-      }
+      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
+      await wifiReady; 
 
       
       // Streamed land-use display layer (reliable, loads by extent)
@@ -968,53 +970,48 @@ window.addEventListener('DOMContentLoaded', () => {
         .bounds((err, bounds) => { if (!err && bounds) map.fitBounds(bounds.pad(0.02)); });
 
 
-
-
-
-      // Pull EAs once for MCDA, with geometry (paginate to be safe)
-      async function queryAllCensus(returnGeom = true) {
-        const base = 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query';
-        const fields = ['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID'].join(',');
-        const chunk = 2000;
+      async function loadCensusForMcda() {
+        const pageSize = 2000;
         let offset = 0;
-        const out = { type:'FeatureCollection', features:[] };
-        while (true) {
-          const url = `${base}?where=1=1&outFields=${encodeURIComponent(fields)}&f=geojson` +
-                      `&returnExceededLimitFeatures=true&outSR=4326` +
-                      `&resultOffset=${offset}&resultRecordCount=${chunk}` +
-                      `&returnGeometry=${returnGeom ? 'true' : 'false'}`;
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`Census HTTP ${res.status} at offset ${offset}`);
-          const gj = await res.json();
-          const feats = gj.features || [];
-          out.features.push(...feats);
-          if (feats.length < chunk) break;
-          offset += feats.length;
-        }
-        return out;
-      }
-
+        const feats = [];
       
-      try {
-        const fc = await queryAllCensus(true);
-        // compute density per feature & keep a tight FC for point lookups
-        // keep only features with geometry + props
-        const feats = (fc.features||[]).filter(f=>f && f.geometry && f.properties);
+        while (true) {
+          const q = L.esri.query({ url: CENSUS_FS_URL })
+            .where('1=1')
+            .fields(['*'])                  // grab all; we compute density ourselves
+            .returnGeometry(true)
+            .limit(pageSize)
+            .offset(offset);
+      
+          const fc = await new Promise((resolve, reject) =>
+            q.run((err, res) => err ? reject(err) : resolve(res))
+          );
+      
+          const batch = fc?.features || [];
+          feats.push(...batch);
+          if (batch.length < pageSize) break;
+          offset += batch.length;
+        }
+      
+        // compute density & min/max
         const densVals = [];
         feats.forEach(f => {
           const d = finiteDensityFromFeature(f);
-          f.properties._density = d;        // may be null
-          if (d != null) densVals.push(d);
+          f.properties._density = Number.isFinite(d) ? d : null;
+          if (Number.isFinite(d)) densVals.push(d);
         });
-        if (densVals.length) {
-          CENSUS_MIN = Math.min(...densVals);
-          CENSUS_MAX = Math.max(...densVals);
-        }
-        CENSUS_FC = { type:'FeatureCollection', features: feats };
-        console.log('[CENSUS] features:', feats.length, 'finite densities:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
-        } catch (e) {
-          console.warn('Census FC for MCDA failed; pop-density will be neutral (0.5).', e);
-        }
+      
+        window.CENSUS_FC  = { type: 'FeatureCollection', features: feats };
+        window.CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
+        window.CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
+      
+        console.log('[CENSUS][MCDA] features:', feats.length,
+                    'finite:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
+      }
+
+
+
+
 
 
       
@@ -1112,7 +1109,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
       const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
-      const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
+      const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
@@ -1133,7 +1130,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const t = r.dInd / dMax;
       const s_ind = (industryPref === 'closer')
           ? clamp(1 - t, 0, 1)
-          : clamp(Math.log1p(t) / Math.log1p(1 + dMax/dMax), 0, 1); 
+          : clamp(t / 2, 0, 1); 
       const s_bld  = clamp(r.dens / denMax, 0, 1);
       const s_lu   = clamp(r.luScore, 0, 1);
       
@@ -1236,7 +1233,12 @@ window.addEventListener('DOMContentLoaded', () => {
     
       // helper: safe number, keep 0, round a bit
       const fmt = v => Number.isFinite(v) ? +(+v).toFixed(6) : '';
-    
+
+      const nfin = Number.isFinite;
+
+
+
+      
       // fallback: compute population density right now for a point
       function pdAtPointNow(center) {
         try {
@@ -1288,18 +1290,17 @@ window.addEventListener('DOMContentLoaded', () => {
         (r.components?.s_pop  ?? ''),
         (r.components?.s_ind  ?? ''),
       
-        // raw inputs:
-        isFinite(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
-        isFinite(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
-        isFinite(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
-        isFinite(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',   // ← keep it if we have it
+        // raw distances/inputs:
+        nfin(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
+        nfin(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
+        nfin(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
+        nfin(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',
         (r.inputs?.bldgCount100m ?? ''),
         JSON.stringify(r.inputs?.landUseLabel ?? ''),
         (r.inputs?.landUseScore ?? ''),
-      
-        // pop density only if finite
-        (isFinite(r.inputs?.popDensity) ? r.inputs.popDensity : '')
+        nfin(r.inputs?.popDensity) ? r.inputs.popDensity : ''
       ];
+
     
         csv += row.join(',') + '\n';
       });
