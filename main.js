@@ -150,6 +150,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const CENSUS_FS_URL =
     'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0';
+
+  let CENSUS_FC = null;
+  let CENSUS_MIN = 0;
+  let CENSUS_MAX = 1;
   
   let censusFL = null;          // FeatureLayer handle (lazy-created)
   let censusBreaks = null;      // quantile breaks for colors
@@ -483,9 +487,23 @@ window.addEventListener('DOMContentLoaded', () => {
     if (topLayer && window.map.hasLayer(topLayer)) window.map.removeLayer(topLayer);
     hexLayer = null;
     topLayer = null;
-    ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
+    ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
+    ui.lu_readout.textContent = '—';
   }
 
+
+  
+  // Bind once (outside the function)
+  ui.runBtn?.addEventListener('click', recompute);
+  ui.btnClear?.addEventListener('click', clearResults);
+  
+  // (keep your existing CSV export wiring here if you had it above)
+  // PurpleAir + Stations toggles (you already have these)
+  ui.togglePA.addEventListener('change', /* ... */);
+  ui.toggleStations.addEventListener('change', /* ... */);
+  
+  // Kick things off
+  init(); // load data, build display overlays, set Ready
 
 
 
@@ -813,9 +831,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-    // for MCDA use across functions
-  let CENSUS_FC = null;
-  let CENSUS_MIN = 0, CENSUS_MAX = 1;
+
 
 
   async function probeArcgisCount(url){
@@ -1286,9 +1302,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
  
   
-    /* -------- wire up + go -------- */
-    ui.runBtn.addEventListener('click', recompute);
-    ui.btnClear.addEventListener('click', clearResults);
 
 
 
