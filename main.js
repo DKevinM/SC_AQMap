@@ -1288,16 +1288,8 @@ window.addEventListener('DOMContentLoaded', () => {
     
     ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
     ui.lu_readout.textContent = '—';
+  } 
 
-
- 
-  
-
-
-
-
-
-  
     function exportTop10CSV() {
       const snap = window.lastMCDA;
       if (!snap || !snap.top10?.length) {
