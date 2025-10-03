@@ -86,15 +86,15 @@ window.addEventListener('DOMContentLoaded', () => {
     lu_readout: document.getElementById('lu_readout'),
   };
 
-  // Hex toggle responds whenever the layer exists
+  // Hex toggle controls the layer, if/when it exists
   document.getElementById('toggleHex')?.addEventListener('change', (e) => {
-    if (!window.map || !window.hexLayer) return;
+    if (!map || !hexLayer) return;
     e.target.checked ? hexLayer.addTo(map) : map.removeLayer(hexLayer);
   });
   
-  // Top 10 toggle responds whenever the layer exists
+  // Top 10 toggle controls the layer, if/when it exists
   document.getElementById('toggleTop')?.addEventListener('change', (e) => {
-    if (!window.map || !window.topLayer) return;
+    if (!map || !topLayer) return;
     e.target.checked ? topLayer.addTo(map) : map.removeLayer(topLayer);
   });
 
@@ -943,6 +943,7 @@ window.addEventListener('DOMContentLoaded', () => {
           { direction: 'top', offset: [0, -6] }
         )
       });
+      window.layersControl?.addOverlay(wifiFL, 'Wi-Fi');
       
       // Promise that resolves when Wi-Fi finishes drawing
       const wifiReady = new Promise(res => wifiFL.once('load', () => {
@@ -965,9 +966,13 @@ window.addEventListener('DOMContentLoaded', () => {
         res();
       }));
       const playDisp  = L.geoJSON(play,  { pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
+      window.layersControl?.addOverlay(playDisp, 'Playgrounds');
       const parksDisp = L.geoJSON(parks, { pane:'features', style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
+      window.layersControl?.addOverlay(parksDisp, 'Parks');
       const fieldsDisp= L.geoJSON(fields,{ pane:'features', style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
-      const splashDisp= L.geoJSON(splash,{ pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });     
+      window.layersControl?.addOverlay(fieldsDisp, 'Playing Fields');
+      const splashDisp= L.geoJSON(splash,{ pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });  
+      window.layersControl?.addOverlay(splashDisp, 'Splash Parks');
       const pemuDisp = L.geoJSON(pemu, {
         pane: 'features',
         style: () => ({
@@ -976,6 +981,7 @@ window.addEventListener('DOMContentLoaded', () => {
           fillColor: '#dcb6ef',
           fillOpacity: 0.25
         }),
+        window.layersControl?.addOverlay(pemuDisp, 'PEMU');
         onEachFeature: (f, lyr) => {
           const p = f.properties || {};
           // Try a few likely field names; fall back to a generic label
@@ -1037,6 +1043,7 @@ window.addEventListener('DOMContentLoaded', () => {
           lyr.on('mouseout',  () => landFL.resetStyle(lyr));
         }
       });
+      window.layersControl?.addOverlay(landFL, 'Land Use');
 
       
       L.esri.query({ url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0' })
@@ -1053,10 +1060,12 @@ window.addEventListener('DOMContentLoaded', () => {
         url:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0',
         pane:'features', style:{color:'#a16d00',weight:1,opacity:0.9}, simplifyFactor:0.1, precision:7
       });
+      window.layersControl?.addOverlay(roadsFL, 'Roads');
       const bldgFL  = L.esri.featureLayer({
         url:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0',
         pane:'features', style:{color:'#444',weight:0.7,fillColor:'#bdbdbd',fillOpacity:0.35}, simplifyFactor:0.1, precision:7
       });
+      window.layersControl?.addOverlay(bldgFL, 'Buildings');
 
       // checkbox ↔ layer wiring
       function bindToggleLive(id, layer) {
@@ -1222,41 +1231,69 @@ window.addEventListener('DOMContentLoaded', () => {
         lu_label:r.luLabel,
         d_ind_km:+r.dInd.toFixed(3) // optional
       };
+      // build Top 10 + snapshot
+      const top10 = raw
+        .filter(r => r.allowed === 1)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+      
+      const topFC = {
+        type: 'FeatureCollection',
+        features: top10.map(r => ({
+          type: 'Feature',
+          properties: { score: +r.score.toFixed(3) },
+          geometry: r.center.geometry
+        }))
+      };
+      
+      // stash for CSV export
+      window.lastMCDA = {
+        when: new Date().toISOString(),
+        params: {
+          mode,
+          roadsPref,
+          industryPref,
+          excludePEMU,
+          cellKm,
+          dMax,
+          weightsNormalized: { ...w }
+        },
+        top10,
+        bbox
+      };
     });
 
+    // HEX
     if (hexLayer) map.removeLayer(hexLayer);
     hexLayer = L.geoJSON(hex, {
       pane:'suitability',
       style:f=>({color:'#aaa',weight:0.4,fillColor:colorFor(f.properties.score),fillOpacity:0.35})
     }).addTo(map);
-    if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
-
-    const top10 = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
-    const topFC = { type:'FeatureCollection', features: top10.map(r=>({type:'Feature',properties:{score:+r.score.toFixed(3)},geometry:r.center.geometry})) };
-    // Save a snapshot for export
-    window.lastMCDA = {
-      when: new Date().toISOString(),
-      params: {
-        mode,
-        roadsPref,
-        excludePEMU,
-        cellKm,
-        dMax,
-        weightsNormalized: { ...w }
-      },
-      top10,   // each entry has .center, .score, .components, .inputs
-      bbox     // from turf.bbox(land)
-    };
-
     
+    // make them visible to outside code (optional, if you kept window.* in listeners)
+    window.hexLayer = hexLayer;
+    
+    // add to layers control (safe to call repeatedly; control ignores duplicates by ref)
+    window.layersControl?.addOverlay(hexLayer, 'Hex suitability');
+    
+    // honor checkbox state
+    if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
+    
+    
+    // TOP 10
     if (topLayer) map.removeLayer(topLayer);
     topLayer = L.geoJSON(topFC, {
       pane:'markers',
       pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,weight:2,color:'#fe0002',fillColor:'#fff',fillOpacity:1})
         .bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
     }).addTo(map);
+    
+    window.topLayer = topLayer;
+    window.layersControl?.addOverlay(topLayer, 'Top 10');
+    
     if (ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
     topLayer.bringToFront();
+
 
     ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
     ui.lu_readout.textContent = '—';
