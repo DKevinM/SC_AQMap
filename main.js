@@ -981,7 +981,6 @@ window.addEventListener('DOMContentLoaded', () => {
           fillColor: '#dcb6ef',
           fillOpacity: 0.25
         }),
-        window.layersControl?.addOverlay(pemuDisp, 'PEMU');
         onEachFeature: (f, lyr) => {
           const p = f.properties || {};
           // Try a few likely field names; fall back to a generic label
@@ -1015,6 +1014,8 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
 
+      window.layersControl?.addOverlay(pemuDisp, 'PEMU');
+      
       if (ui.toggleWifi?.checked) wifiFL.addTo(map);
       await wifiReady; 
       await loadCensusForMcda(); 
@@ -1221,83 +1222,67 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
     
+    // color scale & paint props
     const minS = Math.min(...raw.map(r=>r.score)), maxS = Math.max(...raw.map(r=>r.score));
-    const colorFor=s=>{ const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
-
-    hex.features.forEach((f,i)=>{ const r=raw[i];
+    const colorFor = s => { const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
+    
+    hex.features.forEach((f,i) => {
+      const r = raw[i];
       f.properties = {
         score:+r.score.toFixed(3),
         lu_score:+r.luScore.toFixed(2),
         lu_label:r.luLabel,
-        d_ind_km:+r.dInd.toFixed(3) // optional
+        d_ind_km:+r.dInd.toFixed(3)
       };
-      // build Top 10 + snapshot
-      const top10 = raw
-        .filter(r => r.allowed === 1)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-      
-      const topFC = {
-        type: 'FeatureCollection',
-        features: top10.map(r => ({
-          type: 'Feature',
-          properties: { score: +r.score.toFixed(3) },
-          geometry: r.center.geometry
-        }))
-      };
-      
-      // stash for CSV export
-      window.lastMCDA = {
-        when: new Date().toISOString(),
-        params: {
-          mode,
-          roadsPref,
-          industryPref,
-          excludePEMU,
-          cellKm,
-          dMax,
-          weightsNormalized: { ...w }
-        },
-        top10,
-        bbox
-      };
-    });
-
-    // HEX
+    }); // ✅ close the forEach here
+    
+    // ---- Top 10 & snapshot (do this ONCE) ----
+    const top10 = raw
+      .filter(r => r.allowed === 1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    
+    const topFC = {
+      type: 'FeatureCollection',
+      features: top10.map(r => ({
+        type: 'Feature',
+        properties: { score: +r.score.toFixed(3) },
+        geometry: r.center.geometry
+      }))
+    };
+    
+    window.lastMCDA = {
+      when: new Date().toISOString(),
+      params: { mode, roadsPref, industryPref, excludePEMU, cellKm, dMax, weightsNormalized: { ...w } },
+      top10,
+      bbox
+    };
+    
+    // ---- Draw HEX layer ----
     if (hexLayer) map.removeLayer(hexLayer);
     hexLayer = L.geoJSON(hex, {
       pane:'suitability',
-      style:f=>({color:'#aaa',weight:0.4,fillColor:colorFor(f.properties.score),fillOpacity:0.35})
+      style:f=>({ color:'#aaa', weight:0.4, fillColor:colorFor(f.properties.score), fillOpacity:0.35 })
     }).addTo(map);
-    
-    // make them visible to outside code (optional, if you kept window.* in listeners)
     window.hexLayer = hexLayer;
-    
-    // add to layers control (safe to call repeatedly; control ignores duplicates by ref)
     window.layersControl?.addOverlay(hexLayer, 'Hex suitability');
-    
-    // honor checkbox state
     if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
     
-    
-    // TOP 10
+    // ---- Draw TOP 10 layer ----
     if (topLayer) map.removeLayer(topLayer);
     topLayer = L.geoJSON(topFC, {
       pane:'markers',
-      pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,weight:2,color:'#fe0002',fillColor:'#fff',fillOpacity:1})
+      pointToLayer:(f,ll)=>L.circleMarker(ll,{ radius:6, weight:2, color:'#fe0002', fillColor:'#fff', fillOpacity:1 })
         .bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
     }).addTo(map);
-    
     window.topLayer = topLayer;
     window.layersControl?.addOverlay(topLayer, 'Top 10');
-    
     if (ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
     topLayer.bringToFront();
-
-
+    
     ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
     ui.lu_readout.textContent = '—';
-  }
+
 
  
   
