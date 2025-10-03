@@ -86,6 +86,18 @@ window.addEventListener('DOMContentLoaded', () => {
     lu_readout: document.getElementById('lu_readout'),
   };
 
+  // Hex toggle responds whenever the layer exists
+  document.getElementById('toggleHex')?.addEventListener('change', (e) => {
+    if (!window.map || !window.hexLayer) return;
+    e.target.checked ? hexLayer.addTo(map) : map.removeLayer(hexLayer);
+  });
+  
+  // Top 10 toggle responds whenever the layer exists
+  document.getElementById('toggleTop')?.addEventListener('change', (e) => {
+    if (!window.map || !window.topLayer) return;
+    e.target.checked ? topLayer.addTo(map) : map.removeLayer(topLayer);
+  });
+
   
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],
@@ -1047,27 +1059,33 @@ window.addEventListener('DOMContentLoaded', () => {
       });
 
       // checkbox ↔ layer wiring
-      function bindToggle(el, layer){
-        if (!el || !layer) return;
-        const add = () => { 
-          console.log('[toggle]', el.id, '→ add');
-          layer.addTo(map); layer.bringToFront?.();
-        };
-        if (el.checked) add();
-        el.addEventListener('change', e => {
-          console.log('[toggle]', el.id, e.target.checked ? '→ add' : '→ remove');
-          e.target.checked ? add() : map.removeLayer(layer);
-        });
-      }
-      bindToggle(ui.toggleWifi,   wifiFL);
-      bindToggle(ui.togglePlay,   playDisp);
-      bindToggle(ui.toggleParks,  parksDisp);
-      bindToggle(ui.toggleFields, fieldsDisp);
-      bindToggle(ui.toggleSplash, splashDisp);
-      bindToggle(ui.togglePEMU,   pemuDisp);
-      bindToggle(ui.toggleLand,   landFL);
-      bindToggle(ui.toggleRoads,  roadsFL);
-      bindToggle(ui.toggleBldg,   bldgFL);
+      function bindToggleLive(id, layer) {
+        if (!layer) return;
+        const add = () => { console.log('[add]', id); layer.addTo(map); layer.bringToFront?.(); };
+        const rem = () => { console.log('[remove]', id); map.removeLayer(layer); };
+      
+        // initial state from current checkbox (if present)
+        const el = document.getElementById(id);
+        if (el?.checked) add();
+      
+        // delegate changes so we don't lose listeners if the input is re-rendered
+        document.addEventListener('change', (e) => {
+          const t = e.target;
+          if (!t || t.id !== id || t.type !== 'checkbox') return;
+          t.checked ? add() : rem();
+          });
+        }
+        
+        // use IDs directly
+        bindToggleLive('toggleWifi',   wifiFL);
+        bindToggleLive('togglePlay',   playDisp);
+        bindToggleLive('toggleParks',  parksDisp);
+        bindToggleLive('toggleFields', fieldsDisp);
+        bindToggleLive('toggleSplash', splashDisp);
+        bindToggleLive('togglePEMU',   pemuDisp);
+        bindToggleLive('toggleLand',   landFL);
+        bindToggleLive('toggleRoads',  roadsFL);
+        bindToggleLive('toggleBldg',   bldgFL);
 
       ui.status.textContent = 'Ready. Click Recompute.';
       appReady = true;
