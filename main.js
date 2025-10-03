@@ -487,7 +487,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (topLayer && window.map.hasLayer(topLayer)) window.map.removeLayer(topLayer);
     hexLayer = null;
     topLayer = null;
-    ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
+    ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
     ui.lu_readout.textContent = '—';
   }
 
@@ -497,16 +497,6 @@ window.addEventListener('DOMContentLoaded', () => {
   ui.runBtn?.addEventListener('click', recompute);
   ui.btnClear?.addEventListener('click', clearResults);
   
-  // (keep your existing CSV export wiring here if you had it above)
-  // PurpleAir + Stations toggles (you already have these)
-  ui.togglePA.addEventListener('change', /* ... */);
-  ui.toggleStations.addEventListener('change', /* ... */);
-  
-  // Kick things off
-  init(); // load data, build display overlays, set Ready
-
-
-
 
     
   // === NPRI (default symbology + HOVER identify) ===
