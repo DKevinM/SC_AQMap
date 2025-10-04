@@ -1055,8 +1055,13 @@ window.addEventListener('DOMContentLoaded', () => {
       
       L.esri.query({ url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0' })
         .bounds((err, bounds) => { if (!err && bounds) map.fitBounds(bounds.pad(0.02)); });
-
-
+      
+      landFL.once('load', () => {
+        const b = landFL.getBounds();
+        if (b && b.isValid()) {
+          map.fitBounds(b.pad(0.02));
+        }
+      });
 
 
 
@@ -1075,33 +1080,28 @@ window.addEventListener('DOMContentLoaded', () => {
       window.layersControl?.addOverlay(bldgFL, 'Buildings');
 
       // checkbox ↔ layer wiring
-      function bindToggleLive(id, layer) {
-        if (!layer) return;
-        const add = () => { console.log('[add]', id); layer.addTo(map); layer.bringToFront?.(); };
-        const rem = () => { console.log('[remove]', id); map.removeLayer(layer); };
+      function wireToggle(id, layer) {
+        const box = document.getElementById(id);
+        if (!box || !layer) return;
+        // initial state
+        if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
+        // live changes
+        box.addEventListener('change', () => {
+          if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
+          else { map.removeLayer(layer); }
+        });
+      }
       
-        // initial state from current checkbox (if present)
-        const el = document.getElementById(id);
-        if (el?.checked) add();
-      
-        // delegate changes so we don't lose listeners if the input is re-rendered
-        document.addEventListener('change', (e) => {
-          const t = e.target;
-          if (!t || t.id !== id || t.type !== 'checkbox') return;
-          t.checked ? add() : rem();
-          });
-        }
-        
-        // use IDs directly
-        bindToggleLive('toggleWifi',   wifiFL);
-        bindToggleLive('togglePlay',   playDisp);
-        bindToggleLive('toggleParks',  parksDisp);
-        bindToggleLive('toggleFields', fieldsDisp);
-        bindToggleLive('toggleSplash', splashDisp);
-        bindToggleLive('togglePEMU',   pemuDisp);
-        bindToggleLive('toggleLand',   landFL);
-        bindToggleLive('toggleRoads',  roadsFL);
-        bindToggleLive('toggleBldg',   bldgFL);
+      wireToggle('toggleWifi',   wifiFL);
+      wireToggle('togglePlay',   playDisp);
+      wireToggle('toggleParks',  parksDisp);
+      wireToggle('toggleFields', fieldsDisp);
+      wireToggle('toggleSplash', splashDisp);
+      wireToggle('togglePEMU',   pemuDisp);
+      wireToggle('toggleLand',   landFL);
+      wireToggle('toggleRoads',  roadsFL);
+      wireToggle('toggleBldg',   bldgFL);
+
 
       ui.status.textContent = 'Ready. Click Recompute.';
       appReady = true;
