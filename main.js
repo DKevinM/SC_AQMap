@@ -13,7 +13,13 @@ const URLS = {
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
 
   
-  
+
+
+
+
+
+
+
 /* --------------------------- START APP ---------------------------- */
 window.addEventListener('DOMContentLoaded', () => {
   /* -------- MAP (create ONCE) -------- */
@@ -25,8 +31,8 @@ window.addEventListener('DOMContentLoaded', () => {
   window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
   
   // Panes: tiles (200) < features (400) < suitability (410) < markers (420)
-  map.createPane('features');    map.getPane('features').style.zIndex = 410;
-  map.createPane('suitability'); map.getPane('suitability').style.zIndex = 400;
+  map.createPane('features');    map.getPane('features').style.zIndex = 400;
+  map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
   map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
 
   setTimeout(()=>map.invalidateSize(),0);
@@ -1058,9 +1064,7 @@ window.addEventListener('DOMContentLoaded', () => {
       
       landFL.once('load', () => {
         const b = landFL.getBounds();
-        if (b && b.isValid()) {
-          map.fitBounds(b.pad(0.02));
-        }
+        if (b && b.isValid()) map.fitBounds(b.pad(0.02));
       });
 
 
@@ -1087,6 +1091,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
         // live changes
         box.addEventListener('change', () => {
+          console.log('[toggle]', id, '→', box.checked ? 'ON' : 'OFF');
           if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
           else { map.removeLayer(layer); }
         });
