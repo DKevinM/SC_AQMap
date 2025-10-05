@@ -1031,7 +1031,10 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         CENSUS_FC = { type:'FeatureCollection', features: feats };
         console.log('[CENSUS] features:', feats.length, 'finite densities:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
-
+        } catch (err) {
+          console.error('[CENSUS] preload failed', err);
+          // leave CENSUS_FC null; scoring will fall back to neutral pop density
+        }
 
       
       // Streaming Esri overlays (constant style)
