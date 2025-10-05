@@ -1069,6 +1069,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
+  }
     
   
 
