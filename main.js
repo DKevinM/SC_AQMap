@@ -13,13 +13,7 @@ const URLS = {
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
 
   
-
-
-
-
-
-
-
+  
 /* --------------------------- START APP ---------------------------- */
 window.addEventListener('DOMContentLoaded', () => {
   /* -------- MAP (create ONCE) -------- */
@@ -45,66 +39,38 @@ window.addEventListener('DOMContentLoaded', () => {
   
   /* -------- UI refs -------- */
   const ui = {
-    mode: document.getElementById('mode'),
-    roadsPref: document.getElementById('roadsPref'),
-    industryPref: document.getElementById('industryPref'),
-  
-    cellkm: document.getElementById('cellkm'),
-    cellkm_val: document.getElementById('cellkm_val'),
-    dmax: document.getElementById('dmax'),
-    dmax_val: document.getElementById('dmax_val'),
-  
-    w_wifi: document.getElementById('w_wifi'),
-    w_wifi_val: document.getElementById('w_wifi_val'),
-    w_amen: document.getElementById('w_amen'),
-    w_amen_val: document.getElementById('w_amen_val'),
-    w_road: document.getElementById('w_road'),
-    w_road_val: document.getElementById('w_road_val'),
-    w_lu: document.getElementById('w_lu'),
-    w_lu_val: document.getElementById('w_lu_val'),
-    w_bld: document.getElementById('w_bld'),
-    w_bld_val: document.getElementById('w_bld_val'),
-    w_pop: document.getElementById('w_pop'),
-    w_pop_val: document.getElementById('w_pop_val'),
-    w_ind: document.getElementById('w_ind'),
-    w_ind_val: document.getElementById('w_ind_val'),
-  
-    excludePEMU: document.getElementById('excludePEMU'),
-  
-    toggleHex: document.getElementById('toggleHex'),
-    toggleTop: document.getElementById('toggleTop'),
-    toggleWifi: document.getElementById('toggleWifi'),
-    togglePlay: document.getElementById('togglePlay'),
-    toggleParks: document.getElementById('toggleParks'),
-    toggleFields: document.getElementById('toggleFields'),
-    toggleSplash: document.getElementById('toggleSplash'),
-    toggleRoads: document.getElementById('toggleRoads'),
-    toggleBldg: document.getElementById('toggleBldg'),
-    togglePEMU: document.getElementById('togglePEMU'),
-    toggleLand: document.getElementById('toggleLand'),
-    toggleNPRIwms: document.getElementById('toggleNPRIwms'),
-    togglePA: document.getElementById('togglePA'),
-    toggleStations: document.getElementById('toggleStations'),
-  
-    runBtn: document.getElementById('runBtn'),
-    btnClear: document.getElementById('btnClear'),
-    status: document.getElementById('status'),
-    lu_readout: document.getElementById('lu_readout'),
+    mode: mode,
+    roadsPref: roadsPref,
+    cellkm: cellkm, cellkm_val: cellkm_val,
+    dmax: dmax, dmax_val: dmax_val,
+    w_wifi: w_wifi, w_wifi_val: w_wifi_val,
+    w_amen: w_amen, w_amen_val: w_amen_val,
+    w_road: w_road, w_road_val: w_road_val,
+    w_lu: w_lu, w_lu_val: w_lu_val,
+    w_bld: w_bld, w_bld_val: w_bld_val,
+    w_pop: w_pop, w_pop_val: w_pop_val,
+    excludePEMU: excludePEMU,
+    togglePA: togglePA,
+    toggleStations: toggleStations,
+    toggleHex: toggleHex,
+    toggleTop: toggleTop,
+    toggleWifi: toggleWifi,
+    togglePlay: togglePlay,
+    toggleParks: toggleParks,
+    toggleFields: toggleFields,
+    toggleSplash: toggleSplash,
+    toggleRoads: toggleRoads,
+    toggleBldg: toggleBldg,
+    togglePEMU: togglePEMU,
+    toggleLand: toggleLand,
+    toggleNPRIwms: toggleNPRIwms,
+    industryPref: industryPref,
+    w_ind: w_ind, w_ind_val: w_ind_val,
+    runBtn: runBtn,
+    status: status,
+    lu_readout: lu_readout,
+    btnClear: btnClear,
   };
-
-  // Hex toggle controls the layer, if/when it exists
-  document.getElementById('toggleHex')?.addEventListener('change', (e) => {
-    if (!map || !hexLayer) return;
-    e.target.checked ? hexLayer.addTo(map) : map.removeLayer(hexLayer);
-  });
-  
-  // Top 10 toggle controls the layer, if/when it exists
-  document.getElementById('toggleTop')?.addEventListener('change', (e) => {
-    if (!map || !topLayer) return;
-    e.target.checked ? topLayer.addTo(map) : map.removeLayer(topLayer);
-  });
-
-  
   function hookRange(inp, lab){ const f=()=>lab.textContent=(+inp.value).toFixed(inp.step.includes('.')?1:0); inp.addEventListener('input',f); f(); }
   [['cellkm','cellkm_val'],['dmax','dmax_val'],
    ['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],
@@ -156,10 +122,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const CENSUS_FS_URL =
     'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0';
-
-  let CENSUS_FC = null;
-  let CENSUS_MIN = 0;
-  let CENSUS_MAX = 1;
   
   let censusFL = null;          // FeatureLayer handle (lazy-created)
   let censusBreaks = null;      // quantile breaks for colors
@@ -222,54 +184,12 @@ window.addEventListener('DOMContentLoaded', () => {
     return out;
   }
 
-
-  async function loadCensusForMcda() {
-    const pageSize = 2000;
-    let offset = 0;
-    const feats = [];
-  
-    while (true) {
-      const q = L.esri.query({ url: CENSUS_FS_URL })
-        .where('1=1')
-        .fields(['*'])                  // grab all; we compute density ourselves
-        .returnGeometry(true)
-        .limit(pageSize)
-        .offset(offset);
-  
-      const fc = await new Promise((resolve, reject) =>
-        q.run((err, res) => err ? reject(err) : resolve(res))
-      );
-  
-      const batch = fc?.features || [];
-      feats.push(...batch);
-      if (batch.length < pageSize) break;
-      offset += batch.length;
-    }
-  
-    // compute density & min/max
-    const densVals = [];
-    feats.forEach(f => {
-      const d = finiteDensityFromFeature(f);
-      f.properties._density = Number.isFinite(d) ? d : null;
-      if (Number.isFinite(d)) densVals.push(d);
-    });
-  
-    CENSUS_FC  = { type: 'FeatureCollection', features: feats };
-    CENSUS_MIN = densVals.length ? Math.min(...densVals) : 0;
-    CENSUS_MAX = densVals.length ? Math.max(...densVals) : 1;
-  
-    console.log('[CENSUS][MCDA] features:', feats.length,
-                'finite:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
-  }
-
-
-  
   
   async function buildCensusBreaksAndStats() {
     const statsDiv = document.getElementById('censusStats');
     try {
-      await loadCensusForMcda(); // fills CENSUS_FC / MIN / MAX
-      const feats = (CENSUS_FC?.features || []).filter(f => f && f.properties && f.geometry);
+      const fc = await queryAllCensus(true); // need geometry for area
+      const feats = fc.features.filter(f => f && f.properties && f.geometry);
   
       const vals = feats
         .map(f => densityFromFeature(f))
@@ -414,16 +334,12 @@ window.addEventListener('DOMContentLoaded', () => {
         map.removeLayer(censusFL);
       }
     });
-
-
-
-
-    
+  
     // Export Top-10 (uses geometry so area is correct)
     btn?.addEventListener('click', async () => {
       try {
-          await loadCensusForMcda();
-          const rows = ((CENSUS_FC?.features) || [])
+        const fc = await queryAllCensus(true); // geometry for robust area
+        const rows = (fc.features || [])
           .map(f => {
             const p = f.properties || {};
             const km2 = areaKm2From(f);
@@ -494,15 +410,11 @@ window.addEventListener('DOMContentLoaded', () => {
     hexLayer = null;
     topLayer = null;
     ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
-    ui.lu_readout.textContent = '—';
   }
 
 
-  
-  // Bind once (outside the function)
-  ui.runBtn?.addEventListener('click', recompute);
-  ui.btnClear?.addEventListener('click', clearResults);
-  
+
+
 
     
   // === NPRI (default symbology + HOVER identify) ===
@@ -615,6 +527,29 @@ window.addEventListener('DOMContentLoaded', () => {
     else stopNpriHover();
   });
 
+
+  
+    // hover; switch to 'click' if you prefer quieter identify
+    map.on('mousemove', npriIdentifyHandler);
+  
+  
+  function stopNpri() {
+    const map = window.map;
+    if (npriIdentifyHandler && map) map.off('mousemove', npriIdentifyHandler);
+    npriIdentifyHandler = null;
+    if (npriTip && npriTip._map) map.removeLayer(npriTip);
+    npriTip = null;
+    if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
+  }
+  
+  // Wire the checkbox
+  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
+    if (e.target.checked) startNpri();
+    else stopNpri();
+  });
+
+
+  
 
 
   // ---------- 1) CODE MAPPING BY ZONING ----------
@@ -827,7 +762,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-
+    // for MCDA use across functions
+  let CENSUS_FC = null;
+  let CENSUS_MIN = 0, CENSUS_MAX = 1;
 
 
   async function probeArcgisCount(url){
@@ -915,10 +852,11 @@ window.addEventListener('DOMContentLoaded', () => {
       
       console.log('[wifi] features:', wifi?.features?.length || 0, 'geom:', wifi?.features?.[0]?.geometry?.type);
       if (!wifi?.features?.length) {
-        // harmless: the FL below will rehydrate actual points and overwrite LAYERS.wifi
+        console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
       }
 
-
+      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
+      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
       
       const npri = await fetchNpriFacilitiesFC();
       console.log('[NPRI] facilities fetched:', npri?.features?.length ?? 0);
@@ -955,7 +893,6 @@ window.addEventListener('DOMContentLoaded', () => {
           { direction: 'top', offset: [0, -6] }
         )
       });
-      window.layersControl?.addOverlay(wifiFL, 'Wi-Fi');
       
       // Promise that resolves when Wi-Fi finishes drawing
       const wifiReady = new Promise(res => wifiFL.once('load', () => {
@@ -977,16 +914,11 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('[wifi] loaded features:', feats.length);
         res();
       }));
-      const playDisp  = L.geoJSON(play,  { pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
-      window.layersControl?.addOverlay(playDisp, 'Playgrounds');
-      const parksDisp = L.geoJSON(parks, { pane:'features', style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
-      window.layersControl?.addOverlay(parksDisp, 'Parks');
-      const fieldsDisp= L.geoJSON(fields,{ pane:'features', style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
-      window.layersControl?.addOverlay(fieldsDisp, 'Playing Fields');
-      const splashDisp= L.geoJSON(splash,{ pane:'features', pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });  
-      window.layersControl?.addOverlay(splashDisp, 'Splash Parks');
+      const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
+      const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
+      const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
+      const splashDisp= L.geoJSON(splash,{ pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0aa2ff',fillOpacity:0.9}) });
       const pemuDisp = L.geoJSON(pemu, {
-        pane: 'features',
         style: () => ({
           color: '#6a0080',
           weight: 1.2,
@@ -1026,13 +958,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      window.layersControl?.addOverlay(pemuDisp, 'PEMU');
-      
-      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
-      await wifiReady; 
-      await loadCensusForMcda(); 
-
-
       
       // Streamed land-use display layer (reliable, loads by extent)
       const landFL = L.esri.featureLayer({
@@ -1056,18 +981,56 @@ window.addEventListener('DOMContentLoaded', () => {
           lyr.on('mouseout',  () => landFL.resetStyle(lyr));
         }
       });
-      window.layersControl?.addOverlay(landFL, 'Land Use');
 
       
       L.esri.query({ url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0' })
         .bounds((err, bounds) => { if (!err && bounds) map.fitBounds(bounds.pad(0.02)); });
+
+
+
+
+
+      // Pull EAs once for MCDA, with geometry (paginate to be safe)
+      async function queryAllCensus(returnGeom = true) {
+        const base = 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/2018_Municipal_Census___Enumeration_Areas_Map/FeatureServer/0/query';
+        const fields = ['tot_pop','TOT_POP','Shape_Area','shape_area','EA_ID'].join(',');
+        const chunk = 2000;
+        let offset = 0;
+        const out = { type:'FeatureCollection', features:[] };
+        while (true) {
+          const url = `${base}?where=1=1&outFields=${encodeURIComponent(fields)}&f=geojson` +
+                      `&returnExceededLimitFeatures=true&outSR=4326` +
+                      `&resultOffset=${offset}&resultRecordCount=${chunk}` +
+                      `&returnGeometry=${returnGeom ? 'true' : 'false'}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`Census HTTP ${res.status} at offset ${offset}`);
+          const gj = await res.json();
+          const feats = gj.features || [];
+          out.features.push(...feats);
+          if (feats.length < chunk) break;
+          offset += feats.length;
+        }
+        return out;
+      }
+
       
-      landFL.once('load', () => {
-        const b = landFL.getBounds();
-        if (b && b.isValid()) map.fitBounds(b.pad(0.02));
-      });
-
-
+      try {
+        const fc = await queryAllCensus(true);
+        // compute density per feature & keep a tight FC for point lookups
+        // keep only features with geometry + props
+        const feats = (fc.features||[]).filter(f=>f && f.geometry && f.properties);
+        const densVals = [];
+        feats.forEach(f => {
+          const d = finiteDensityFromFeature(f);
+          f.properties._density = d;        // may be null
+          if (d != null) densVals.push(d);
+        });
+        if (densVals.length) {
+          CENSUS_MIN = Math.min(...densVals);
+          CENSUS_MAX = Math.max(...densVals);
+        }
+        CENSUS_FC = { type:'FeatureCollection', features: feats };
+        console.log('[CENSUS] features:', feats.length, 'finite densities:', densVals.length, 'min/max:', CENSUS_MIN, CENSUS_MAX);
 
 
       
@@ -1076,48 +1039,33 @@ window.addEventListener('DOMContentLoaded', () => {
         url:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Street_Network1/FeatureServer/0',
         pane:'features', style:{color:'#a16d00',weight:1,opacity:0.9}, simplifyFactor:0.1, precision:7
       });
-      window.layersControl?.addOverlay(roadsFL, 'Roads');
       const bldgFL  = L.esri.featureLayer({
         url:'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Building_Footprints/FeatureServer/0',
         pane:'features', style:{color:'#444',weight:0.7,fillColor:'#bdbdbd',fillOpacity:0.35}, simplifyFactor:0.1, precision:7
       });
-      window.layersControl?.addOverlay(bldgFL, 'Buildings');
 
       // checkbox ↔ layer wiring
-      function wireToggle(id, layer) {
-        const box = document.getElementById(id);
-        if (!box || !layer) return;
-        // initial state
-        if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
-        // live changes
-        box.addEventListener('change', () => {
-          console.log('[toggle]', id, '→', box.checked ? 'ON' : 'OFF');
-          if (box.checked) { layer.addTo(map); layer.bringToFront?.(); }
-          else { map.removeLayer(layer); }
-        });
+      function bindToggle(el, layer){ if(!el) return;
+        if (el.checked) { layer.addTo(map); layer.bringToFront?.(); }
+        el.addEventListener('change', e => e.target.checked ? layer.addTo(map).bringToFront?.() : map.removeLayer(layer));
       }
-      
-      wireToggle('toggleWifi',   wifiFL);
-      wireToggle('togglePlay',   playDisp);
-      wireToggle('toggleParks',  parksDisp);
-      wireToggle('toggleFields', fieldsDisp);
-      wireToggle('toggleSplash', splashDisp);
-      wireToggle('togglePEMU',   pemuDisp);
-      wireToggle('toggleLand',   landFL);
-      wireToggle('toggleRoads',  roadsFL);
-      wireToggle('toggleBldg',   bldgFL);
-
+      bindToggle(ui.toggleWifi,   wifiFL);
+      bindToggle(ui.togglePlay,   playDisp);
+      bindToggle(ui.toggleParks,  parksDisp);
+      bindToggle(ui.toggleFields, fieldsDisp);
+      bindToggle(ui.toggleSplash, splashDisp);
+      bindToggle(ui.togglePEMU,   pemuDisp);
+      bindToggle(ui.toggleLand,   landFL);
+      bindToggle(ui.toggleRoads,  roadsFL);
+      bindToggle(ui.toggleBldg,   bldgFL);
 
       ui.status.textContent = 'Ready. Click Recompute.';
       appReady = true;
-
-      console.log('[ui missing]', Object.entries(ui).filter(([k,v]) => !v).map(([k])=>k));
       
     } catch(e){
       console.error(e);
       ui.status.innerHTML = `<span class="err">Failed to load data: ${e.message}</span>`;
     }
-  }
     
   
 
@@ -1179,7 +1127,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
       const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
-      const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
+      const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
@@ -1200,7 +1148,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const t = r.dInd / dMax;
       const s_ind = (industryPref === 'closer')
           ? clamp(1 - t, 0, 1)
-          : clamp(t, 0, 1); 
+          : clamp(Math.log1p(t) / Math.log1p(1 + dMax/dMax), 0, 1); 
       const s_bld  = clamp(r.dens / denMax, 0, 1);
       const s_lu   = clamp(r.luScore, 0, 1);
       
@@ -1219,7 +1167,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
         dInd_km:  r.dInd, 
-        bldgCount250m: r.dens,
+        bldgCount100m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
         popDensity: (r.pd ?? null)
@@ -1233,68 +1181,67 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
     
-    // color scale & paint props
     const minS = Math.min(...raw.map(r=>r.score)), maxS = Math.max(...raw.map(r=>r.score));
-    const colorFor = s => { const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
-    
-    hex.features.forEach((f,i) => {
-      const r = raw[i];
+    const colorFor=s=>{ const t=(s-minS)/(maxS-minS+1e-9); return `hsl(${200-160*t}, ${30+40*t}%, ${85-45*t}%)`; };
+
+    hex.features.forEach((f,i)=>{ const r=raw[i];
       f.properties = {
         score:+r.score.toFixed(3),
         lu_score:+r.luScore.toFixed(2),
         lu_label:r.luLabel,
-        d_ind_km:+r.dInd.toFixed(3)
+        d_ind_km:+r.dInd.toFixed(3) // optional
       };
-    }); // ✅ close the forEach here
-    
-    // ---- Top 10 & snapshot (do this ONCE) ----
-    const top10 = raw
-      .filter(r => r.allowed === 1)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
-    
-    const topFC = {
-      type: 'FeatureCollection',
-      features: top10.map(r => ({
-        type: 'Feature',
-        properties: { score: +r.score.toFixed(3) },
-        geometry: r.center.geometry
-      }))
-    };
-    
-    window.lastMCDA = {
-      when: new Date().toISOString(),
-      params: { mode, roadsPref, industryPref, excludePEMU, cellKm, dMax, weightsNormalized: { ...w } },
-      top10,
-      bbox
-    };
-    
-    // ---- Draw HEX layer ----
+    });
+
     if (hexLayer) map.removeLayer(hexLayer);
     hexLayer = L.geoJSON(hex, {
       pane:'suitability',
-      style:f=>({ color:'#aaa', weight:0.4, fillColor:colorFor(f.properties.score), fillOpacity:0.35 })
+      style:f=>({color:'#aaa',weight:0.4,fillColor:colorFor(f.properties.score),fillOpacity:0.78})
     }).addTo(map);
-    window.hexLayer = hexLayer;
-    window.layersControl?.addOverlay(hexLayer, 'Hex suitability');
     if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
+
+    const top10 = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
+    const topFC = { type:'FeatureCollection', features: top10.map(r=>({type:'Feature',properties:{score:+r.score.toFixed(3)},geometry:r.center.geometry})) };
+    // Save a snapshot for export
+    window.lastMCDA = {
+      when: new Date().toISOString(),
+      params: {
+        mode,
+        roadsPref,
+        excludePEMU,
+        cellKm,
+        dMax,
+        weightsNormalized: { ...w }
+      },
+      top10,   // each entry has .center, .score, .components, .inputs
+      bbox     // from turf.bbox(land)
+    };
+
     
-    // ---- Draw TOP 10 layer ----
     if (topLayer) map.removeLayer(topLayer);
     topLayer = L.geoJSON(topFC, {
       pane:'markers',
-      pointToLayer:(f,ll)=>L.circleMarker(ll,{ radius:6, weight:2, color:'#fe0002', fillColor:'#fff', fillOpacity:1 })
+      pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,weight:2,color:'#fe0002',fillColor:'#fff',fillOpacity:1})
         .bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
     }).addTo(map);
-    window.topLayer = topLayer;
-    window.layersControl?.addOverlay(topLayer, 'Top 10');
     if (ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
     topLayer.bringToFront();
-    
+
     ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
     ui.lu_readout.textContent = '—';
-  } 
+  }
 
+ 
+  
+    /* -------- wire up + go -------- */
+    ui.runBtn.addEventListener('click', recompute);
+    ui.btnClear.addEventListener('click', clearResults);
+
+
+
+
+
+  
     function exportTop10CSV() {
       const snap = window.lastMCDA;
       if (!snap || !snap.top10?.length) {
@@ -1304,12 +1251,7 @@ window.addEventListener('DOMContentLoaded', () => {
     
       // helper: safe number, keep 0, round a bit
       const fmt = v => Number.isFinite(v) ? +(+v).toFixed(6) : '';
-
-      const nfin = Number.isFinite;
-
-
-
-      
+    
       // fallback: compute population density right now for a point
       function pdAtPointNow(center) {
         try {
@@ -1335,7 +1277,7 @@ window.addEventListener('DOMContentLoaded', () => {
         'rank','lat','lon','score',
         's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',
         'dWifi_km','dAmen_km','dRoad_km','dInd_km',
-        'bldgCount250m','landUseLabel','landUseScore','popDensity_people_per_km2'
+        'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
       ];
       let csv = header.join(',') + '\n';
     
@@ -1361,17 +1303,18 @@ window.addEventListener('DOMContentLoaded', () => {
         (r.components?.s_pop  ?? ''),
         (r.components?.s_ind  ?? ''),
       
-        // raw distances/inputs:
-        nfin(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
-        nfin(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
-        nfin(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
-        nfin(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',
-        (r.inputs?.bldgCount250m ?? ''),
+        // raw inputs:
+        isFinite(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
+        isFinite(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
+        isFinite(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
+        isFinite(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',   // ← keep it if we have it
+        (r.inputs?.bldgCount100m ?? ''),
         JSON.stringify(r.inputs?.landUseLabel ?? ''),
         (r.inputs?.landUseScore ?? ''),
-        nfin(pd) ? pd : ''
+      
+        // pop density only if finite
+        (isFinite(r.inputs?.popDensity) ? r.inputs.popDensity : '')
       ];
-
     
         csv += row.join(',') + '\n';
       });
