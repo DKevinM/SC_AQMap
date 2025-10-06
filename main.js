@@ -101,6 +101,28 @@ window.addEventListener('DOMContentLoaded', () => {
     return { type:'FeatureCollection', features: all };
   }
 
+
+  function densityBucket(pd) {
+    if (!Number.isFinite(pd)) return '—';
+    // Prefer empiric quantiles if we have them
+    if (Array.isArray(censusBreaks) && censusBreaks.length === 5) {
+      const [q10,q30,q50,q70,q90] = censusBreaks;
+      if (pd <= q10) return `≤ ${q10.toFixed(0)}`;
+      if (pd <= q30) return `${q10.toFixed(0)}–${q30.toFixed(0)}`;
+      if (pd <= q50) return `${q30.toFixed(0)}–${q50.toFixed(0)}`;
+      if (pd <= q70) return `${q50.toFixed(0)}–${q70.toFixed(0)}`;
+      if (pd <= q90) return `${q70.toFixed(0)}–${q90.toFixed(0)}`;
+      return `> ${q90.toFixed(0)}`;
+    }
+    // Fallback if quantiles not built: just show numeric
+    return `${pd.toFixed(1)} people/km²`;
+  }
+
+
+
+
+
+  
   function finiteDensityFromFeature(f) {
     try {
       const p = f?.properties || {};
@@ -1131,7 +1153,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
       const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
-      const ring = turf.circle(center, 0.1, {steps:16, units:'kilometers'});
+      const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
@@ -1171,7 +1193,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
         dInd_km:  r.dInd, 
-        bldgCount100m: r.dens,
+        bldgCount250m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
         popDensity: (r.pd ?? null)
@@ -1204,33 +1226,60 @@ window.addEventListener('DOMContentLoaded', () => {
     }).addTo(map);
     if (ui.toggleHex && !ui.toggleHex.checked) map.removeLayer(hexLayer);
 
-    const top10 = raw.filter(r=>r.allowed===1).sort((a,b)=>b.score-a.score).slice(0,10);
-    const topFC = { type:'FeatureCollection', features: top10.map(r=>({type:'Feature',properties:{score:+r.score.toFixed(3)},geometry:r.center.geometry})) };
-    // Save a snapshot for export
+    const top10 = raw
+      .filter(r => r.allowed === 1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    
+    // For each candidate, compute dInd_km & pop density AT THAT POINT (center)
+    top10.forEach(r => {
+      const pt = r.center;
+      const dInd = distanceToFeaturesKm(pt, LAYERS.npri || { type:'FeatureCollection', features:[] });
+      const pd   = popDensityAtPoint(pt, CENSUS_FC);
+      r.inputs.dInd_km   = Number.isFinite(dInd) ? dInd : null;   // ensure present for CSV
+      r.inputs.popDensity = Number.isFinite(pd) ? pd : null;       // ensure present for CSV
+      r.inputs.popBucket  = densityBucket(pd);
+    });
+
+    
+    const topFC = {
+      type: 'FeatureCollection',
+      features: top10.map(r => ({
+        type: 'Feature',
+        properties: {
+          score: +r.score.toFixed(3),
+          dInd_km: Number.isFinite(r.inputs.dInd_km) ? +r.inputs.dInd_km.toFixed(3) : null,
+          popDensity: Number.isFinite(r.inputs.popDensity) ? +r.inputs.popDensity.toFixed(1) : null,
+          popBucket: r.inputs.popBucket || '—'
+        },
+        geometry: r.center.geometry
+      }))
+    };
+    
+    // keep the snapshot for export
     window.lastMCDA = {
       when: new Date().toISOString(),
-      params: {
-        mode,
-        roadsPref,
-        excludePEMU,
-        cellKm,
-        dMax,
-        weightsNormalized: { ...w }
-      },
-      top10,   // each entry has .center, .score, .components, .inputs
-      bbox     // from turf.bbox(land)
+      params: { mode, roadsPref, industryPref, excludePEMU, cellKm, dMax, weightsNormalized: { ...w } },
+      top10,
+      bbox
     };
 
     
     if (topLayer) map.removeLayer(topLayer);
     topLayer = L.geoJSON(topFC, {
       pane:'markers',
-      pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,weight:2,color:'#fe0002',fillColor:'#fff',fillOpacity:1})
-        .bindPopup(`<b>Candidate</b><br>Score: ${f.properties.score}`)
+      pointToLayer:(f,ll)=>L.circleMarker(ll,{ radius:6, weight:2, color:'#fe0002', fillColor:'#fff', fillOpacity:1 })
+        .bindPopup(
+          `<b>Candidate</b><br/>
+           Score: ${f.properties.score}<br/>
+           Nearest industry: ${f.properties.dInd_km ?? '—'} km<br/>
+           Pop. density: ${f.properties.popDensity ?? '—'} people/km² (${f.properties.popBucket})`
+        )
     }).addTo(map);
     if (ui.toggleTop && !ui.toggleTop.checked) map.removeLayer(topLayer);
     topLayer.bringToFront();
 
+    
     ui.status.innerHTML = `<span class="ok">Done. Cells: ${hex.features.length}, Top10 shown.</span>`;
     ui.lu_readout.textContent = '—';
   }
@@ -1252,7 +1301,11 @@ window.addEventListener('DOMContentLoaded', () => {
         alert('No Top 10 available yet. Click “Recompute” first.');
         return;
       }
-    
+
+      const n = v => Number.isFinite(v) ? String(v) : '';          // numeric → bare
+      const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;   // text → quoted
+
+      
       // helper: safe number, keep 0, round a bit
       const fmt = v => Number.isFinite(v) ? +(+v).toFixed(6) : '';
     
@@ -1281,45 +1334,35 @@ window.addEventListener('DOMContentLoaded', () => {
         'rank','lat','lon','score',
         's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',
         'dWifi_km','dAmen_km','dRoad_km','dInd_km',
-        'bldgCount100m','landUseLabel','landUseScore','popDensity_people_per_km2'
+        'bldgCount250m','landUseLabel','landUseScore','popDensity_people_per_km2'
       ];
       let csv = header.join(',') + '\n';
     
       snap.top10.forEach((r, i) => {
         const coords = r.center?.geometry?.coordinates || [NaN, NaN];
         const lat = coords[1], lon = coords[0];
-    
-        // ensure we have a finite pd; if not, recompute right now
-        let pd = r.inputs?.popDensity;
-        if (!Number.isFinite(pd)) pd = pdAtPointNow(r.center);
-    
-      const row = [
-        i + 1,
-        lat, lon,
-        (r.score ?? ''),
       
-        // component scores (already 0–1):
-        (r.components?.s_wifi ?? ''),
-        (r.components?.s_amen ?? ''),
-        (r.components?.s_road ?? ''),
-        (r.components?.s_lu   ?? ''),
-        (r.components?.s_bld  ?? ''),
-        (r.components?.s_pop  ?? ''),
-        (r.components?.s_ind  ?? ''),
+        // pull from r.inputs (popDensity, dInd_km were set in recompute)
+        const row = [
+          i + 1,
+          n(lat), n(lon),
+          n(r.score),
       
-        // raw inputs:
-        isFinite(r.inputs?.dWifi_km) ? r.inputs.dWifi_km : '',
-        isFinite(r.inputs?.dAmen_km) ? r.inputs.dAmen_km : '',
-        isFinite(r.inputs?.dRoad_km) ? r.inputs.dRoad_km : '',
-        isFinite(r.inputs?.dInd_km)  ? r.inputs.dInd_km  : '',   // ← keep it if we have it
-        (r.inputs?.bldgCount100m ?? ''),
-        JSON.stringify(r.inputs?.landUseLabel ?? ''),
-        (r.inputs?.landUseScore ?? ''),
+          // component scores:
+          n(r.components?.s_wifi), n(r.components?.s_amen), n(r.components?.s_road),
+          n(r.components?.s_lu),   n(r.components?.s_bld),  n(r.components?.s_pop),
+          n(r.components?.s_ind),
       
-        // pop density only if finite
-        (isFinite(r.inputs?.popDensity) ? r.inputs.popDensity : '')
-      ];
-    
+          // raw inputs (all numeric except landUseLabel):
+          n(r.inputs?.dWifi_km), n(r.inputs?.dAmen_km), n(r.inputs?.dRoad_km), n(r.inputs?.dInd_km),
+          n(r.inputs?.bldgCount100m),
+      
+          // text + numeric:
+          q(r.inputs?.landUseLabel ?? ''),   // keep quoted
+          n(r.inputs?.landUseScore),
+          n(r.inputs?.popDensity)            // numeric, no quotes → Excel won’t add a `'`
+        ];
+      
         csv += row.join(',') + '\n';
       });
     
