@@ -101,6 +101,18 @@ window.addEventListener('DOMContentLoaded', () => {
     return { type:'FeatureCollection', features: all };
   }
 
+  function renderTop10Summary() {
+    const snap = window.lastMCDA;
+    if (!snap?.top10?.length) return;
+    const lines = snap.top10.map((r,i) => {
+      const [lon,lat] = r.center.geometry.coordinates;
+      const dInd = Number.isFinite(r.inputs?.dInd_km) ? r.inputs.dInd_km.toFixed(3) : '—';
+      const pd   = Number.isFinite(r.inputs?.popDensity) ? r.inputs.popDensity.toFixed(1) : '—';
+      return `${i+1}. ${lat.toFixed(6)}, ${lon.toFixed(6)} — dInd_km=${dInd}, popDensity=${pd}`;
+    }).join('\n');
+    (document.getElementById('top10Summary')||{}).textContent = lines;
+  }
+
 
   function densityBucket(pd) {
     if (!Number.isFinite(pd)) return '—';
@@ -1196,7 +1208,7 @@ window.addEventListener('DOMContentLoaded', () => {
         bldgCount250m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
-        popDensity: (r.pd ?? null)
+        popDensity: (Number.isFinite(r.pd) ? r.pd : null) 
       };
     
       r.scoreRaw = w.wifi*s_wifi + w.amen*s_amen + w.road*s_road +
@@ -1291,7 +1303,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.btnClear.addEventListener('click', clearResults);
 
 
-
+    renderTop10Summary();
 
 
   
@@ -1341,6 +1353,8 @@ window.addEventListener('DOMContentLoaded', () => {
       snap.top10.forEach((r, i) => {
         const coords = r.center?.geometry?.coordinates || [NaN, NaN];
         const lat = coords[1], lon = coords[0];
+        let pd = r.inputs?.popDensity;
+        if (!Number.isFinite(pd)) pd = popDensityAtPoint(r.center, CENSUS_FC);
       
         // pull from r.inputs (popDensity, dInd_km were set in recompute)
         const row = [
@@ -1355,12 +1369,12 @@ window.addEventListener('DOMContentLoaded', () => {
       
           // raw inputs (all numeric except landUseLabel):
           n(r.inputs?.dWifi_km), n(r.inputs?.dAmen_km), n(r.inputs?.dRoad_km), n(r.inputs?.dInd_km),
-          n(r.inputs?.bldgCount100m),
+          n(r.inputs?.bldgCount250m),
       
           // text + numeric:
           q(r.inputs?.landUseLabel ?? ''),   // keep quoted
           n(r.inputs?.landUseScore),
-          n(r.inputs?.popDensity)            // numeric, no quotes → Excel won’t add a `'`
+          Number.isFinite(pd) ? pd : ''           // numeric, no quotes → Excel won’t add a `'`
         ];
       
         csv += row.join(',') + '\n';
