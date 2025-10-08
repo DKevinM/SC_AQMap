@@ -24,7 +24,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // after your tile layer is added
   window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
   
-  // Panes: tiles (200) < features (400) < suitability (410) < markers (420)
+  // Panes: tiles (200) < features (400) < stability (410) < markers (420)
   map.createPane('features');    map.getPane('features').style.zIndex = 400;
   map.createPane('suitability'); map.getPane('suitability').style.zIndex = 410;
   map.createPane('markers');     map.getPane('markers').style.zIndex = 420;
@@ -49,6 +49,8 @@ window.addEventListener('DOMContentLoaded', () => {
     w_lu: w_lu, w_lu_val: w_lu_val,
     w_bld: w_bld, w_bld_val: w_bld_val,
     w_pop: w_pop, w_pop_val: w_pop_val,
+    minStationKm: minStationKm, minStationKm_val: minStationKm_val,
+    minPurpleKm:  minPurpleKm,  minPurpleKm_val:  minPurpleKm_val,
     excludePEMU: excludePEMU,
     togglePA: togglePA,
     toggleStations: toggleStations,
@@ -75,7 +77,8 @@ window.addEventListener('DOMContentLoaded', () => {
   [['cellkm','cellkm_val'],['dmax','dmax_val'],
    ['w_wifi','w_wifi_val'],['w_amen','w_amen_val'],['w_road','w_road_val'],
    ['w_lu','w_lu_val'],['w_bld','w_bld_val'],['w_pop','w_pop_val'],
-   ['w_ind','w_ind_val']
+   ['w_ind','w_ind_val'],
+   ['minStationKm','minStationKm_val'],['minPurpleKm','minPurpleKm_val']
   ].forEach(([a,b])=>hookRange(ui[a],ui[b]));
 
   
@@ -915,6 +918,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
 
+
+      
+
       // Display overlays (constant widths)
       // --- Wi-Fi as FeatureLayer (renders reliably) ---
       const wifiFL = L.esri.featureLayer({
@@ -1143,6 +1149,9 @@ window.addEventListener('DOMContentLoaded', () => {
           industryPref = ui.industryPref.value,
           excludePEMU = ui.excludePEMU.checked;
 
+    const minStationKm = +ui.minStationKm.value;
+    const minPurpleKm  = +ui.minPurpleKm.value;
+
 
     let w = {
       wifi:+ui.w_wifi.value, amen:+ui.w_amen.value, road:+ui.w_road.value,
@@ -1168,10 +1177,15 @@ window.addEventListener('DOMContentLoaded', () => {
       const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
-      const pd = popDensityAtPoint(center, CENSUS_FC); // may be null if outside or census missing
-      const allowed = excludePEMU && pointInAnyPolygon(center, pemu) ? 0 : 1;
+      const pd = popDensityAtPoint(center, CENSUS_FC); 
+      const dStn = distanceToFeaturesKm(center, STATIONS_FC || {type:'FeatureCollection',features:[]});
+      const dPA  = distanceToFeaturesKm(center, PURPLE_FC   || {type:'FeatureCollection',features:[]});
+      const inPEMU        = excludePEMU && pointInAnyPolygon(center, pemu);
+      const tooCloseStn   = Number.isFinite(dStn) && dStn < minStationKm;
+      const tooClosePA    = Number.isFinite(dPA)  && dPA  < minPurpleKm;
+      const allowed       = (inPEMU || tooCloseStn || tooClosePA) ? 0 : 1;
       raw.push({
-        cell, center, dWifi, dAmen, dRoad, dInd, dens,
+        cell, center, dWifi, dAmen, dRoad, dInd, dens,  dStn, dPA,
         luScore: luDet.score, luLabel: luDet.label, pd, allowed
       });
     }
@@ -1205,6 +1219,8 @@ window.addEventListener('DOMContentLoaded', () => {
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
         dInd_km:  r.dInd, 
+        dStn_km:  r.dStn,
+        dPA_km:   r.dPA,
         bldgCount250m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
