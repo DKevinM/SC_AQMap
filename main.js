@@ -1171,8 +1171,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const tooClosePA  = Number.isFinite(dPA)  && dPA  < +ui.minPurpleKm.value;
     const allowed = (excludePEMU && pointInAnyPolygon(center, pemu)) || tooCloseStn || tooClosePA ? 0 : 1;
     
-    // store for CSV / popup:
-    raw.push({ ..., dStn, dPA, allowed, ... });
 
 
     let w = {
@@ -1196,12 +1194,20 @@ window.addEventListener('DOMContentLoaded', () => {
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
       const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
+      const dStn = STATIONS_FC?.features?.length ? distanceToFeaturesKm(center, STATIONS_FC) : Infinity;
+      const dPA  = PURPLE_FC?.features?.length   ? distanceToFeaturesKm(center, PURPLE_FC)   : Infinity;
       const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); 
-      const dStn = distanceToFeaturesKm(center, STATIONS_FC || {type:'FeatureCollection',features:[]});
-      const dPA  = distanceToFeaturesKm(center, PURPLE_FC   || {type:'FeatureCollection',features:[]});
+
+      const minStn = +(ui.minStationKm?.value ?? 0);  // e.g. 2
+      const minPA  = +(ui.minPurpleKm?.value  ?? 0);  // e.g. 2
+      const tooCloseStn = Number.isFinite(dStn) && dStn < minStn;
+      const tooClosePA  = Number.isFinite(dPA)  && dPA  < minPA;
+      const blocked = (excludePEMU && pointInAnyPolygon(center, pemu)) || tooCloseStn || tooClosePA;
+      const allowed = blocked ? 0 : 1;
+      
       const inPEMU        = excludePEMU && pointInAnyPolygon(center, pemu);
       const tooCloseStn   = Number.isFinite(dStn) && dStn < minStationKm;
       const tooClosePA    = Number.isFinite(dPA)  && dPA  < minPurpleKm;
