@@ -1188,6 +1188,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const hex = turf.hexGrid(bbox, cellKm, { units:'kilometers' });
 
     const raw = []; let maxBldDen=0;
+    const minStn = +(ui.minStationKm?.value ?? 0);  
+    const minPA  = +(ui.minPurpleKm?.value  ?? 0);  
+    
     for (const cell of hex.features){
       const center = turf.centerOfMass(cell);
       const dWifi = distanceToFeaturesKm(center, wifi);
@@ -1200,14 +1203,6 @@ window.addEventListener('DOMContentLoaded', () => {
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); 
-
-      const minStn = +(ui.minStationKm?.value ?? 0);  // e.g. 2
-      const minPA  = +(ui.minPurpleKm?.value  ?? 0);  // e.g. 2
-      const tooCloseStn = Number.isFinite(dStn) && dStn < minStn;
-      const tooClosePA  = Number.isFinite(dPA)  && dPA  < minPA;
-      const blocked = (excludePEMU && pointInAnyPolygon(center, pemu)) || tooCloseStn || tooClosePA;
-      const allowed = blocked ? 0 : 1;
-      
       const inPEMU        = excludePEMU && pointInAnyPolygon(center, pemu);
       const tooCloseStn   = Number.isFinite(dStn) && dStn < minStationKm;
       const tooClosePA    = Number.isFinite(dPA)  && dPA  < minPurpleKm;
