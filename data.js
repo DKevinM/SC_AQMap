@@ -125,6 +125,68 @@ async function fetchCensusEAWithDensity() {
 window.fetchCensusEAWithDensity = fetchCensusEAWithDensity;
 
 
+
+// data.js
+
+// Helper: turn arrays/loose JSON into a FeatureCollection of points
+function toPointFC(json) {
+  const arr = Array.isArray(json) ? json : (json.data || json.features || Object.values(json || {}));
+  if (!arr?.length) return { type:'FeatureCollection', features:[] };
+  const latK = ['lat','latitude','Latitude','LAT','Lat'].find(k => k in arr[0]) || 'lat';
+  const lonK = ['lon','lng','long','longitude','Longitude','LON','Lng'].find(k => k in arr[0]) || 'lon';
+  return {
+    type:'FeatureCollection',
+    features: arr.map(r => ({
+      type:'Feature',
+      properties: { ...r },
+      geometry: { type:'Point', coordinates: [ +r[lonK], +r[latK] ] }
+    })).filter(f => Number.isFinite(f.geometry.coordinates[0]) && Number.isFinite(f.geometry.coordinates[1]))
+  };
+}
+
+// 1) Government stations → FeatureCollection
+// Assumes you already have window.dataReady + window.fetchAllStationData in data.js
+window.stationsFCReady = (async () => {
+  try {
+    await window.dataReady;
+    const rows = await window.fetchAllStationData();
+    const fc = {
+      type:'FeatureCollection',
+      features: (rows || []).map(r => ({
+        type:'Feature',
+        properties: { ...r },
+        geometry: { type:'Point', coordinates: [ +r.lon, +r.lat ] }
+      })).filter(f => Number.isFinite(f.geometry.coordinates[0]) && Number.isFinite(f.geometry.coordinates[1]))
+    };
+    return fc;
+  } catch (e) {
+    console.error('[stationsFCReady] failed', e);
+    return { type:'FeatureCollection', features:[] };
+  }
+})();
+
+// 2) PurpleAir → FeatureCollection
+window.purpleFCReady = (async () => {
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    return toPointFC(json);
+  } catch (e) {
+    console.error('[purpleFCReady] failed', e);
+    return { type:'FeatureCollection', features:[] };
+  }
+})();
+
+
+
+
+
+
+
+
+
+
 /** Utility: download text as a file */
 function downloadText(filename, text) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
