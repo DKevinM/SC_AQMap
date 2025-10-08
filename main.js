@@ -917,6 +917,17 @@ window.addEventListener('DOMContentLoaded', () => {
                  npri };
 
 
+      // main.js (top-level state)
+      let STATIONS_FC = { type:'FeatureCollection', features: [] };
+      let PURPLE_FC   = { type:'FeatureCollection', features: [] };
+      
+      // inside async init(), *before* you compute scores:
+      const [stationsFC, purpleFC] = await Promise.all([
+        window.stationsFCReady,
+        window.purpleFCReady
+      ]);
+      STATIONS_FC = stationsFC;
+      PURPLE_FC   = purpleFC;
 
 
       
@@ -1151,6 +1162,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const minStationKm = +ui.minStationKm.value;
     const minPurpleKm  = +ui.minPurpleKm.value;
+
+    const dStn = distanceToFeaturesKm(center, STATIONS_FC);
+    const dPA  = distanceToFeaturesKm(center, PURPLE_FC);
+
+    // apply your min-distance constraints (if you added those sliders):
+    const tooCloseStn = Number.isFinite(dStn) && dStn < +ui.minStationKm.value;
+    const tooClosePA  = Number.isFinite(dPA)  && dPA  < +ui.minPurpleKm.value;
+    const allowed = (excludePEMU && pointInAnyPolygon(center, pemu)) || tooCloseStn || tooClosePA ? 0 : 1;
+    
+    // store for CSV / popup:
+    raw.push({ ..., dStn, dPA, allowed, ... });
 
 
     let w = {
