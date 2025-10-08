@@ -103,6 +103,24 @@
       </div>
     </div>
 
+    
+    <div class="group">
+      <label>Min distance to existing stations (km) <span class="small">(hard exclude)</span></label>
+      <div class="row">
+        <input type="range" id="minStationKm" min="0" max="10" step="0.5" value="2">
+        <span id="minStationKm_val" class="badge">2</span>
+      </div>
+    </div>
+    
+    <div class="group">
+      <label>Min distance to PurpleAir sensors (km) <span class="small">(hard exclude)</span></label>
+      <div class="row">
+        <input type="range" id="minPurpleKm" min="0" max="10" step="0.5" value="2">
+        <span id="minPurpleKm_val" class="badge">2</span>
+      </div>
+    </div>
+
+
     <div class="group">
       <label>Weights (auto-normalize)</label>
       <div class="row"><span class="small" style="width:110px">Wi-Fi proximity</span><input type="range" id="w_wifi" min="0" max="1" step="0.05" value="0.25"><span id="w_wifi_val" class="badge">0.25</span></div>
@@ -112,6 +130,8 @@
       <div class="row"><span class="small" style="width:110px">Bldg density</span><input type="range" id="w_bld" min="0" max="1" step="0.05" value="0.10"><span id="w_bld_val" class="badge">0.10</span></div>
       <div class="small muted">Sum is normalized to 1.</div>
     </div>
+
+    
 
     <div class="group">
       <label><input type="checkbox" id="excludePEMU"> Exclude inside Priority Environmental Mgmt Units</label>
