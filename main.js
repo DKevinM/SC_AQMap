@@ -579,12 +579,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
   }
   
-  // Wire the checkbox
-  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
-    if (e.target.checked) startNpri();
-    else stopNpri();
-  });
-
 
   
 
@@ -757,13 +751,40 @@ window.addEventListener('DOMContentLoaded', () => {
   async function buildStationsLayer() {
     try {
       await window.dataReady;
-      const rows = await window.fetchAllStationData();
-      if (!rows?.length) return L.layerGroup();
-      return L.layerGroup(rows.map(r => L.circleMarker([+r.lat,+r.lon],{
-        radius:5, weight:2, color:'#333', fillColor:colorForAQHI(r.aqhi), fillOpacity:1
-      }).bindPopup(r.html).bindTooltip(`${r.stationName} — AQHI: ${r.aqhi}`,{direction:'top',offset:[0,-8]})));
-    } catch (e) { console.error(e); return L.layerGroup(); }
-  }
+      const stationRows = await window.fetchAllStationData(); // [{lat,lon,...}]
+      STATIONS_FC = {
+        type:'FeatureCollection',
+        features: (stationRows||[])
+          .filter(r => isFinite(+r.lat) && isFinite(+r.lon))
+          .map(r => ({
+            type:'Feature',
+            properties: { ...r },
+            geometry: { type:'Point', coordinates:[+r.lon, +r.lat] }
+          }))
+      };
+      console.log('[STATIONS] features:', STATIONS_FC.features.length);
+    } catch (e) {
+      console.warn('[STATIONS] not available; constraints will be ignored');
+    }
+    
+    // 2) PurpleAir JSON -> FC (you already have a helper)
+    try {
+      const paResp = await fetch(LAYER_URLS.purpleair);
+      if (paResp.ok) {
+        const paJson = await paResp.json();
+        const paFC = Array.isArray(paJson)
+          ? arrayToFeatureCollection(paJson)
+          : (paJson?.type === 'FeatureCollection' ? paJson
+             : arrayToFeatureCollection(paJson?.data || Object.values(paJson||{})));
+        PURPLE_FC = paFC || { type:'FeatureCollection', features:[] };
+        console.log('[PURPLE] features:', PURPLE_FC.features.length);
+      } else {
+        console.warn('[PURPLE] fetch failed:', paResp.status);
+      }
+    } catch (e) {
+      console.warn('[PURPLE] not available; constraints will be ignored');
+    }
+
 
   async function buildExternalPointsLayer(url, style={}){
     try {
@@ -867,7 +888,10 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
 
-
+  // main.js (top-level state)
+  let STATIONS_FC = { type:'FeatureCollection', features: [] };
+  let PURPLE_FC   = { type:'FeatureCollection', features: [] };
+  
 
   
   /* -------- init: fetch data for MCDA + build overlays -------- */
@@ -917,10 +941,7 @@ window.addEventListener('DOMContentLoaded', () => {
                  npri };
 
 
-      // main.js (top-level state)
-      let STATIONS_FC = { type:'FeatureCollection', features: [] };
-      let PURPLE_FC   = { type:'FeatureCollection', features: [] };
-      
+
       // inside async init(), *before* you compute scores:
       const [stationsFC, purpleFC] = await Promise.all([
         window.stationsFCReady,
@@ -932,8 +953,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
       
 
-      // Display overlays (constant widths)
-      // --- Wi-Fi as FeatureLayer (renders reliably) ---
       const wifiFL = L.esri.featureLayer({
         url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0',
         pane: 'markers',
@@ -944,6 +963,10 @@ window.addEventListener('DOMContentLoaded', () => {
           { direction: 'top', offset: [0, -6] }
         )
       });
+      const wifiReady = new Promise(res => wifiFL.once('load', () => { /* …rehydrate LAYERS.wifi… */ res(); }));
+      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
+      await wifiReady.catch(()=>{});
+
       
       // Promise that resolves when Wi-Fi finishes drawing
       const wifiReady = new Promise(res => wifiFL.once('load', () => {
@@ -1163,14 +1186,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const minStationKm = +ui.minStationKm.value;
     const minPurpleKm  = +ui.minPurpleKm.value;
 
-    const dStn = distanceToFeaturesKm(center, STATIONS_FC);
-    const dPA  = distanceToFeaturesKm(center, PURPLE_FC);
-
-    // apply your min-distance constraints (if you added those sliders):
-    const tooCloseStn = Number.isFinite(dStn) && dStn < +ui.minStationKm.value;
-    const tooClosePA  = Number.isFinite(dPA)  && dPA  < +ui.minPurpleKm.value;
-    const allowed = (excludePEMU && pointInAnyPolygon(center, pemu)) || tooCloseStn || tooClosePA ? 0 : 1;
-    
 
 
     let w = {
@@ -1192,21 +1207,35 @@ window.addEventListener('DOMContentLoaded', () => {
     const minPA  = +(ui.minPurpleKm?.value  ?? 0);  
     
     for (const cell of hex.features){
-      const center = turf.centerOfMass(cell);
-      const dWifi = distanceToFeaturesKm(center, wifi);
-      const dAmen = distanceToFeaturesKm(center, amenities);
-      const dRoad = distanceToRoadsKm(center, roads);
+      const centerPt = turf.centerOfMass(cell);
+      
+      const dWifi = distanceToFeaturesKm(centerPt, wifi);
+      const dAmen = distanceToFeaturesKm(centerPt, amenities);
+      const dRoad = distanceToRoadsKm(centerPt, roads);
       const dInd  = distanceToFeaturesKm(centerPt, npri || { type:'FeatureCollection', features:[] });
-      const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
-      const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
-      const luDet = landUseAtPointWithDetails(center, land);
-      const pd = popDensityAtPoint(center, CENSUS_FC); 
-      const allowed = excludePEMU && pointInAnyPolygon(centerPt, pemu) ? 0 : 1;
+
+      const dStn = STATIONS_FC?.features?.length ? distanceToFeaturesKm(centerPt, STATIONS_FC) : Infinity;
+      const dPA  = PURPLE_FC?.features?.length     ? distanceToFeaturesKm(centerPt, PURPLE_FC)   : Infinity;
+
+      const tooCloseStn = Number.isFinite(dStn) && dStn < (+ui.minStationKm.value || 0);
+      const tooClosePA  = Number.isFinite(dPA)  && dPA  < (+ui.minPurpleKm.value  || 0);
+
+      const ring = turf.circle(centerPt, 0.25, {steps:16, units:'kilometers'});
+      const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length;
+      if (dens > maxBldDen) maxBldDen = dens;
+    
+      const luDet = landUseAtPointWithDetails(centerPt, land);
+      const pd    = popDensityAtPoint(centerPt, CENSUS_FC);
+
+      const inPEMU = excludePEMU && pointInAnyPolygon(centerPt, pemu);
+      const allowed = (inPEMU || tooCloseStn || tooClosePA) ? 0 : 1;
+
       raw.push({
         cell, center: centerPt, dWifi, dAmen, dRoad, dInd, dens,
         luScore: luDet.score, luLabel: luDet.label, pd, allowed
       });
     }
+
 
     
     const denMax = Math.max(1, maxBldDen);
@@ -1238,8 +1267,8 @@ window.addEventListener('DOMContentLoaded', () => {
         dAmen_km: r.dAmen,
         dRoad_km: r.dRoad,
         dInd_km:  r.dInd, 
-        dStn_km:  r.dStn,
-        dPA_km:   r.dPA,
+        dStn_km:  (Number.isFinite(r.dStn) ? r.dStn : null),
+        dPA_km:   (Number.isFinite(r.dPA)  ? r.dPA  : null),
         bldgCount250m: r.dens,
         landUseLabel: r.luLabel,
         landUseScore: r.luScore,
@@ -1280,13 +1309,15 @@ window.addEventListener('DOMContentLoaded', () => {
     
     // For each candidate, compute dInd_km & pop density AT THAT POINT (center)
     top10.forEach(r => {
-      const pt = r.center;
+      const pt  = r.center;
       const dInd = distanceToFeaturesKm(pt, LAYERS.npri || { type:'FeatureCollection', features:[] });
       const pd   = popDensityAtPoint(pt, CENSUS_FC);
-      r.inputs.dInd_km   = Number.isFinite(dInd) ? dInd : null;   // ensure present for CSV
-      r.inputs.popDensity = Number.isFinite(pd) ? pd : null;       // ensure present for CSV
+    
+      r.inputs.dInd_km    = Number.isFinite(dInd) ? dInd : null;
+      r.inputs.popDensity = Number.isFinite(pd)   ? pd   : null;
       r.inputs.popBucket  = densityBucket(pd);
     });
+
 
     
     const topFC = {
@@ -1310,6 +1341,7 @@ window.addEventListener('DOMContentLoaded', () => {
       top10,
       bbox
     };
+    renderTop10Summary();
 
     
     if (topLayer) map.removeLayer(topLayer);
@@ -1337,8 +1369,6 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.runBtn.addEventListener('click', recompute);
     ui.btnClear.addEventListener('click', clearResults);
 
-
-    renderTop10Summary();
 
 
   
