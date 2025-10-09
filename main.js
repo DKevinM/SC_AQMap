@@ -911,13 +911,17 @@ window.addEventListener('DOMContentLoaded', () => {
         ]);
 
       
+      let wifiFL = null;
+      let wifiReady = Promise.resolve();
+
+      
       console.log('[wifi] features:', wifi?.features?.length || 0, 'geom:', wifi?.features?.[0]?.geometry?.type);
       if (!wifi?.features?.length) {
         console.warn('[wifi] 0 features returned from URLS.wifi — check the service or query');
       }
 
       if (ui.toggleWifi?.checked) wifiFL.addTo(map);
-      try { await wifiReady; } catch { /* ignore; layer still togglable later */ }
+      await wifiReady.catch(()=>{});
       
       const npri = await fetchNpriFacilitiesFC();
       console.log('[NPRI] facilities fetched:', npri?.features?.length ?? 0);
@@ -953,7 +957,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       
 
-      const wifiFL = L.esri.featureLayer({
+      wifiFL = L.esri.featureLayer({
         url: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0',
         pane: 'markers',
         pointToLayer: (f, latlng) => L.circleMarker(latlng, {
@@ -963,14 +967,9 @@ window.addEventListener('DOMContentLoaded', () => {
           { direction: 'top', offset: [0, -6] }
         )
       });
-      const wifiReady = new Promise(res => wifiFL.once('load', () => { /* …rehydrate LAYERS.wifi… */ res(); }));
-      if (ui.toggleWifi?.checked) wifiFL.addTo(map);
-      await wifiReady.catch(()=>{});
-
       
-      // Promise that resolves when Wi-Fi finishes drawing
-      const wifiReady = new Promise(res => wifiFL.once('load', () => {
-        // Rehydrate LAYERS.wifi from what actually rendered so MCDA can use it
+      wifiReady = new Promise(res => wifiFL.once('load', () => {
+        // rehydrate LAYERS.wifi from what rendered
         const feats = Object.values(wifiFL._layers || {}).map(lyr => {
           const ft = lyr.feature;
           if (ft?.geometry) return ft;
@@ -984,10 +983,11 @@ window.addEventListener('DOMContentLoaded', () => {
           return null;
         }).filter(Boolean);
       
-        LAYERS.wifi = { type: 'FeatureCollection', features: feats };
+        LAYERS.wifi = { type:'FeatureCollection', features: feats };
         console.log('[wifi] loaded features:', feats.length);
         res();
       }));
+
       const playDisp  = L.geoJSON(play,  { pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,weight:1,color:'#0099cb',fillOpacity:0.9}) });
       const parksDisp = L.geoJSON(parks, { style:()=>({color:'#2e7d32',weight:1,fillColor:'#a5d6a7',fillOpacity:0.25}) });
       const fieldsDisp= L.geoJSON(fields,{ style:()=>({color:'#1b5e20',weight:1,fillColor:'#c8e6c9',fillOpacity:0.25}) });
