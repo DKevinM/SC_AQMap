@@ -1326,10 +1326,12 @@ window.addEventListener('DOMContentLoaded', () => {
         type: 'Feature',
         properties: {
           score: +r.score.toFixed(3),
-          dInd_km: Number.isFinite(r.inputs.dInd_km) ? +r.inputs.dInd_km.toFixed(3) : null,
+          dInd_km:  Number.isFinite(r.inputs.dInd_km) ? +r.inputs.dInd_km.toFixed(3) : null,
+          dStn_km:  Number.isFinite(r.inputs.dStn_km) ? +r.inputs.dStn_km.toFixed(3) : null,
+          dPA_km:   Number.isFinite(r.inputs.dPA_km)  ? +r.inputs.dPA_km.toFixed(3)  : null,
           popDensity: Number.isFinite(r.inputs.popDensity) ? +r.inputs.popDensity.toFixed(1) : null,
           popBucket: r.inputs.popBucket || '—'
-        },
+        }
         geometry: r.center.geometry
       }))
     };
@@ -1352,6 +1354,8 @@ window.addEventListener('DOMContentLoaded', () => {
           `<b>Candidate</b><br/>
            Score: ${f.properties.score}<br/>
            Nearest industry: ${f.properties.dInd_km ?? '—'} km<br/>
+           Nearest station: ${f.properties.dStn_km ?? '—'} km<br/>
+           Nearest PurpleAir: ${f.properties.dPA_km ?? '—'} km<br/>
            Pop. density: ${f.properties.popDensity ?? '—'} people/km² (${f.properties.popBucket})`
         )
     }).addTo(map);
