@@ -1196,23 +1196,19 @@ window.addEventListener('DOMContentLoaded', () => {
       const dWifi = distanceToFeaturesKm(center, wifi);
       const dAmen = distanceToFeaturesKm(center, amenities);
       const dRoad = distanceToRoadsKm(center, roads);
-      const dInd  = distanceToFeaturesKm(center, npri || { type:'FeatureCollection', features:[] });
-      const dStn = STATIONS_FC?.features?.length ? distanceToFeaturesKm(center, STATIONS_FC) : Infinity;
-      const dPA  = PURPLE_FC?.features?.length   ? distanceToFeaturesKm(center, PURPLE_FC)   : Infinity;
+      const dInd  = distanceToFeaturesKm(centerPt, npri || { type:'FeatureCollection', features:[] });
       const ring = turf.circle(center, 0.25, {steps:16, units:'kilometers'});
       const dens = turf.pointsWithinPolygon(bldgCentroids, ring).features.length; if (dens>maxBldDen) maxBldDen=dens;
       const luDet = landUseAtPointWithDetails(center, land);
       const pd = popDensityAtPoint(center, CENSUS_FC); 
-      const inPEMU        = excludePEMU && pointInAnyPolygon(center, pemu);
-      const tooCloseStn   = Number.isFinite(dStn) && dStn < minStationKm;
-      const tooClosePA    = Number.isFinite(dPA)  && dPA  < minPurpleKm;
-      const allowed       = (inPEMU || tooCloseStn || tooClosePA) ? 0 : 1;
+      const allowed = excludePEMU && pointInAnyPolygon(centerPt, pemu) ? 0 : 1;
       raw.push({
-        cell, center, dWifi, dAmen, dRoad, dInd, dens,  dStn, dPA,
+        cell, center: centerPt, dWifi, dAmen, dRoad, dInd, dens,
         luScore: luDet.score, luLabel: luDet.label, pd, allowed
       });
     }
 
+    
     const denMax = Math.max(1, maxBldDen);
     for (const r of raw) {
       const s_wifi = clamp(1 - (r.dWifi / dMax), 0, 1);
