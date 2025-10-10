@@ -749,41 +749,69 @@ window.addEventListener('DOMContentLoaded', () => {
   const colorForAQHI = a => (isNaN(+a)?'#666':(+a<=3?'#2ca25f':+a<=6?'#ffb000':+a<=10?'#d73027':'#7a1fa2'));
 
   async function buildStationsLayer() {
+    let stationRows = [];
     try {
       await window.dataReady;
-      const stationRows = await window.fetchAllStationData(); // [{lat,lon,...}]
+      stationRows = await window.fetchAllStationData(); // [{lat,lon,aqhi,html,stationName,...}]
       STATIONS_FC = {
-        type:'FeatureCollection',
-        features: (stationRows||[])
+        type: 'FeatureCollection',
+        features: (stationRows || [])
           .filter(r => isFinite(+r.lat) && isFinite(+r.lon))
           .map(r => ({
-            type:'Feature',
+            type: 'Feature',
             properties: { ...r },
-            geometry: { type:'Point', coordinates:[+r.lon, +r.lat] }
+            geometry: { type: 'Point', coordinates: [+r.lon, +r.lat] }
           }))
       };
       console.log('[STATIONS] features:', STATIONS_FC.features.length);
     } catch (e) {
       console.warn('[STATIONS] not available; constraints will be ignored');
+      STATIONS_FC = { type: 'FeatureCollection', features: [] };
     }
-    
-    // 2) PurpleAir JSON -> FC (you already have a helper)
+  
+    // Pull PurpleAir too so distance constraints work even if the layer isn't toggled on
     try {
       const paResp = await fetch(LAYER_URLS.purpleair);
       if (paResp.ok) {
         const paJson = await paResp.json();
-        const paFC = Array.isArray(paJson)
+        PURPLE_FC = Array.isArray(paJson)
           ? arrayToFeatureCollection(paJson)
           : (paJson?.type === 'FeatureCollection' ? paJson
-             : arrayToFeatureCollection(paJson?.data || Object.values(paJson||{})));
-        PURPLE_FC = paFC || { type:'FeatureCollection', features:[] };
+             : arrayToFeatureCollection(paJson?.data || Object.values(paJson || {})));
         console.log('[PURPLE] features:', PURPLE_FC.features.length);
       } else {
         console.warn('[PURPLE] fetch failed:', paResp.status);
+        PURPLE_FC = { type: 'FeatureCollection', features: [] };
       }
     } catch (e) {
       console.warn('[PURPLE] not available; constraints will be ignored');
+      PURPLE_FC = { type: 'FeatureCollection', features: [] };
     }
+  
+    // Build and return a visible layer for stations (used by the toggle)
+    const group = L.layerGroup(
+      (stationRows || [])
+        .filter(r => isFinite(+r.lat) && isFinite(+r.lon))
+        .map(r =>
+          L.circleMarker([+r.lat, +r.lon], {
+            radius: 5,
+            weight: 2,
+            color: '#333',
+            fillColor: (isFinite(+r.aqhi)
+              ? (+r.aqhi <= 3 ? '#2ca25f' : +r.aqhi <= 6 ? '#ffb000' : +r.aqhi <= 10 ? '#d73027' : '#7a1fa2')
+              : '#666'),
+            fillOpacity: 1
+          })
+          .bindPopup(r.html || `<b>${r.stationName || 'Station'}</b>`)
+          .bindTooltip(`${r.stationName || 'Station'}${isFinite(+r.aqhi) ? ' — AQHI: ' + r.aqhi : ''}`, {
+            direction: 'top',
+            offset: [0, -8]
+          })
+        )
+    );
+  
+    return group;
+  }
 
 
   async function buildExternalPointsLayer(url, style={}){
