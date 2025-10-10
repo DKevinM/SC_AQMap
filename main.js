@@ -1331,9 +1331,9 @@ window.addEventListener('DOMContentLoaded', () => {
           dPA_km:   Number.isFinite(r.inputs.dPA_km)  ? +r.inputs.dPA_km.toFixed(3)  : null,
           popDensity: Number.isFinite(r.inputs.popDensity) ? +r.inputs.popDensity.toFixed(1) : null,
           popBucket: r.inputs.popBucket || '—'
-        }
-        geometry: r.center.geometry
-      }))
+        },
+        geometry: r.center.geometry,
+      })),
     };
     
     // keep the snapshot for export
