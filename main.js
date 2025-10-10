@@ -1259,7 +1259,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const allowed = (inPEMU || tooCloseStn || tooClosePA) ? 0 : 1;
 
       raw.push({
-        cell, center: centerPt, dWifi, dAmen, dRoad, dInd, dens,
+        cell, center: centerPt, dWifi, dAmen, dRoad, dInd, dens, dStn, dPA,
         luScore: luDet.score, luLabel: luDet.label, pd, allowed
       });
     }
@@ -1339,9 +1339,13 @@ window.addEventListener('DOMContentLoaded', () => {
     top10.forEach(r => {
       const pt  = r.center;
       const dInd = distanceToFeaturesKm(pt, LAYERS.npri || { type:'FeatureCollection', features:[] });
+      const dStn = STATIONS_FC?.features?.length ? distanceToFeaturesKm(pt, STATIONS_FC) : null;
+      const dPA  = PURPLE_FC?.features?.length   ? distanceToFeaturesKm(pt, PURPLE_FC)   : null;
       const pd   = popDensityAtPoint(pt, CENSUS_FC);
     
       r.inputs.dInd_km    = Number.isFinite(dInd) ? dInd : null;
+      r.inputs.dStn_km    = Number.isFinite(dStn) ? dStn : null;
+      r.inputs.dPA_km     = Number.isFinite(dPA)  ? dPA  : null;
       r.inputs.popDensity = Number.isFinite(pd)   ? pd   : null;
       r.inputs.popBucket  = densityBucket(pd);
     });
@@ -1442,8 +1446,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const header = [
         'rank','lat','lon','score',
         's_wifi','s_amen','s_road','s_lu','s_bld','s_pop','s_ind',
-        'dWifi_km','dAmen_km','dRoad_km','dInd_km',
-        'bldgCount250m','landUseLabel','landUseScore','popDensity_people_per_km2'
+        'dWifi_km','dAmen_km','dRoad_km','dInd_km','dStn_km','dPA_km',
+        'bldgCount250m','landUseLabel','landUseScore','popDensity_people_per_km2','popDensity_bucket'
       ];
       let csv = header.join(',') + '\n';
     
@@ -1465,13 +1469,15 @@ window.addEventListener('DOMContentLoaded', () => {
           n(r.components?.s_ind),
       
           // raw inputs (all numeric except landUseLabel):
-          n(r.inputs?.dWifi_km), n(r.inputs?.dAmen_km), n(r.inputs?.dRoad_km), n(r.inputs?.dInd_km),
+          n(r.inputs?.dWifi_km), n(r.inputs?.dAmen_km), n(r.inputs?.dRoad_km),
+          n(r.inputs?.dInd_km), n(r.inputs?.dStn_km), n(r.inputs?.dPA_km),
           n(r.inputs?.bldgCount250m),
       
           // text + numeric:
           q(r.inputs?.landUseLabel ?? ''),   // keep quoted
           n(r.inputs?.landUseScore),
-          Number.isFinite(pd) ? pd : ''           // numeric, no quotes → Excel won’t add a `'`
+          Number.isFinite(pd) ? pd : '',
+          r.inputs?.popBucket ?? ''
         ];
       
         csv += row.join(',') + '\n';
