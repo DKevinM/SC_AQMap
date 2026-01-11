@@ -482,6 +482,29 @@ window.addEventListener('DOMContentLoaded', () => {
       }).addTo(npriLayerGroup);
     });
 
+  function getNearestNPRI(pt) {
+    if (!npriData?.features?.length) return { feature:null, distance_km: 999 };
+  
+    let best = null;
+    let bestDist = Infinity;
+  
+    for (const f of npriData.features) {
+      if (!f?.geometry) continue;
+  
+      const d = turf.distance(
+        pt,
+        turf.point(f.geometry.coordinates),
+        { units: "kilometers" }
+      );
+  
+      if (d < bestDist) {
+        bestDist = d;
+        best = f;
+      }
+    }
+  
+    return { feature: best, distance_km: bestDist };
+  }
 
 
     
@@ -1275,7 +1298,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const dWifi = distanceToFeaturesKm(centerPt, wifi);
       const dAmen = distanceToFeaturesKm(centerPt, amenities);
       const dRoad = distanceToRoadsKm(centerPt, roads);
-      const dInd  = distanceToFeaturesKm(centerPt, npri || { type:'FeatureCollection', features:[] });
+      const { distance_km: dInd } = getNearestNPRI(centerPt);
+
 
       const dStn = STATIONS_FC?.features?.length ? distanceToFeaturesKm(centerPt, STATIONS_FC) : Infinity;
       const dPA  = PURPLE_FC?.features?.length     ? distanceToFeaturesKm(centerPt, PURPLE_FC)   : Infinity;
