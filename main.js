@@ -11,6 +11,9 @@ const URLS = {
   land: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
+const npriLayerGroup = L.layerGroup().addTo(map);
+const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
+
 
   
   
@@ -450,6 +453,34 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
 
+  let npriData = null;
+  
+  fetch(NPRI_URL)
+    .then(res => res.json())
+    .then(geo => {
+      npriData = geo;
+  
+      L.geoJSON(geo, {
+        pointToLayer: (f, latlng) => {
+          return L.circleMarker(latlng, {
+            radius: 6,
+            color: "#111",
+            weight: 1,
+            fillColor: "#ff7e00",
+            fillOpacity: 0.85
+          });
+        },
+        onEachFeature: (f, layer) => {
+          const p = f.properties || {};
+          layer.bindTooltip(
+            `<b>${p.FACILITY_NAME || "Facility"}</b><br>
+             ${p.CITY || ""}<br>
+             NPRI ID: ${p.NPRI_ID || ""}`,
+            { className: "npri-label", direction: "top" }
+          );
+        }
+      }).addTo(npriLayerGroup);
+    });
 
 
 
@@ -559,10 +590,14 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   
   // single checkbox wiring (HTML id="toggleNPRIwms")
-  document.getElementById('toggleNPRIwms')?.addEventListener('change', (e) => {
-    if (e.target.checked) startNpriHover();
-    else stopNpriHover();
+  document.getElementById("toggleNPRIwms").addEventListener("change", e => {
+    if (e.target.checked) {
+      map.addLayer(npriLayerGroup);
+    } else {
+      map.removeLayer(npriLayerGroup);
+    }
   });
+
 
 
   
