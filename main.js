@@ -888,12 +888,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (ui.toggleWifi?.checked) wifiFL.addTo(map);
       await wifiReady.catch(()=>{});
+
       
-      const npri = await fetchNpriFacilitiesFC();
-      console.log('[NPRI] facilities fetched:', npri?.features?.length ?? 0);
-      if (!npri?.features?.length) {
+      const npri = npriData || { type:'FeatureCollection', features: [] };
+      
+      console.log('[NPRI] facilities (JSON):', npri.features.length);
+      
+      if (!npri.features.length) {
         console.warn('[NPRI] 0 features — s_ind will default to 1.0 (farther is better) because dInd ~= 999 km');
       }
+
 
 
       const amenities = {
