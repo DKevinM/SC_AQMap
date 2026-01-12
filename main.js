@@ -102,7 +102,7 @@ window.addEventListener('DOMContentLoaded', () => {
     toggleBldg: toggleBldg,
     togglePEMU: togglePEMU,
     toggleLand: toggleLand,
-    toggleNPRIwms: toggleNPRIwms,
+    toggleNPRI: toggleNPRI,
     industryPref: industryPref,
     w_ind: w_ind, w_ind_val: w_ind_val,
     runBtn: runBtn,
