@@ -44,8 +44,8 @@ window.addEventListener('DOMContentLoaded', () => {
           const p = f.properties || {};
           layer.bindTooltip(
             `<b>${p.FACILITY_NAME || "Facility"}</b><br>
-             ${p.CITY || ""}<br>
-             NPRI ID: ${p.NPRI_ID || ""}`,
+             ${p.COMPANY_NAME || "Company"}<br>
+             ${p.SectorDescriptionEn || "Sector"}`,
             { className: "npri-label", direction: "top" }
           );
         }
