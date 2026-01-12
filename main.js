@@ -24,7 +24,6 @@ window.addEventListener('DOMContentLoaded', () => {
   /* -------- MAP (create ONCE) -------- */
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   window.map = map; // expose the Leaflet map to other scripts
-  npriLayerGroup = L.layerGroup().addTo(map);
   // ---------- NPRI POINT LAYER ----------
   fetch(NPRI_URL)
     .then(res => res.json())
