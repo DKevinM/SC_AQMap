@@ -460,16 +460,14 @@ window.addEventListener('DOMContentLoaded', () => {
     .then(geo => {
       npriData = geo;
   
-      L.geoJSON(geo, {
-        pointToLayer: (f, latlng) => {
-          return L.circleMarker(latlng, {
-            radius: 6,
-            color: "#111",
-            weight: 1,
-            fillColor: "#ff7e00",
-            fillOpacity: 0.85
-          });
-        },
+      const npriGeoLayer = L.geoJSON(geo, {
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+          radius: 6,
+          color: "#111",
+          weight: 1,
+          fillColor: "#ff7e00",
+          fillOpacity: 0.85
+        }),
         onEachFeature: (f, layer) => {
           const p = f.properties || {};
           layer.bindTooltip(
@@ -479,8 +477,11 @@ window.addEventListener('DOMContentLoaded', () => {
             { className: "npri-label", direction: "top" }
           );
         }
-      }).addTo(npriLayerGroup);
+      });
+  
+      npriLayerGroup.addLayer(npriGeoLayer);
     });
+
 
   function getNearestNPRI(pt) {
     if (!npriData?.features?.length) return { feature:null, distance_km: 999 };
