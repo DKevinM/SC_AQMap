@@ -24,7 +24,9 @@ window.addEventListener('DOMContentLoaded', () => {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
   
   // after your tile layer is added
-  window.layersControl = L.control.layers(null, null, { collapsed: true }).addTo(map);
+  window.layersControl = L.control.layers(null, null, { collapsed: true });
+  window.layersControl.addTo(map);
+
   
   // Panes: tiles (200) < features (400) < stability (410) < markers (420)
   map.createPane('features');    map.getPane('features').style.zIndex = 400;
