@@ -1,3 +1,6 @@
+let npriLayerGroup = null;
+let npriData = null;
+
 /* ------------------------- CONFIG / LAYERS ------------------------- */
 const URLS = {
   wifi:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/County_Buildings_with_WiFi/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
@@ -21,6 +24,7 @@ window.addEventListener('DOMContentLoaded', () => {
   /* -------- MAP (create ONCE) -------- */
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   window.map = map; // expose the Leaflet map to other scripts
+  npriLayerGroup = L.layerGroup().addTo(map);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
   
   // after your tile layer is added
