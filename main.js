@@ -25,6 +25,35 @@ window.addEventListener('DOMContentLoaded', () => {
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   window.map = map; // expose the Leaflet map to other scripts
   npriLayerGroup = L.layerGroup().addTo(map);
+  // ---------- NPRI POINT LAYER ----------
+  fetch(NPRI_URL)
+    .then(res => res.json())
+    .then(geo => {
+  
+      npriData = geo;
+  
+      const npriGeoLayer = L.geoJSON(geo, {
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+          radius: 6,
+          color: "#111",
+          weight: 1,
+          fillColor: "#ff7e00",
+          fillOpacity: 0.85
+        }),
+        onEachFeature: (f, layer) => {
+          const p = f.properties || {};
+          layer.bindTooltip(
+            `<b>${p.FACILITY_NAME || "Facility"}</b><br>
+             ${p.CITY || ""}<br>
+             NPRI ID: ${p.NPRI_ID || ""}`,
+            { className: "npri-label", direction: "top" }
+          );
+        }
+      });
+  
+      npriLayerGroup.addLayer(npriGeoLayer);
+    })
+    .catch(err => console.error("NPRI load failed:", err));  
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
   
   // after your tile layer is added
@@ -460,33 +489,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let npriData = null;
   
-  fetch(NPRI_URL)
-    .then(res => res.json())
-    .then(geo => {
-      npriData = geo;
-  
-      const npriGeoLayer = L.geoJSON(geo, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-          radius: 6,
-          color: "#111",
-          weight: 1,
-          fillColor: "#ff7e00",
-          fillOpacity: 0.85
-        }),
-        onEachFeature: (f, layer) => {
-          const p = f.properties || {};
-          layer.bindTooltip(
-            `<b>${p.FACILITY_NAME || "Facility"}</b><br>
-             ${p.CITY || ""}<br>
-             NPRI ID: ${p.NPRI_ID || ""}`,
-            { className: "npri-label", direction: "top" }
-          );
-        }
-      });
-  
-      npriLayerGroup.addLayer(npriGeoLayer);
-    });
-
 
   function getNearestNPRI(pt) {
     if (!npriData?.features?.length) return { feature:null, distance_km: 999 };
@@ -513,135 +515,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
 
-    
-  // === NPRI (default symbology + HOVER identify) ===
-  const NPRI_REST_URL = 'https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer';
-  const NPRI_LAYERS   = [0];
-  
-  async function fetchNpriFacilitiesFC() {
-    return await new Promise((resolve, reject) => {
-      L.esri.query({ url: `${NPRI_REST_URL}/0` })
-        .where('1=1')
-        .fields(['*'])
-        .returnGeometry(true)
-        .run((err, fc) => err ? reject(err) : resolve(fc));
-    });
-  }
 
-  
-  let npriDyn = null;              // server-rendered layer (keeps the original legend)
-  let npriTip = null;              // Leaflet tooltip for hover
-  let npriIdentifyHandler = null;  // mousemove handler
-  
-  function startNpriHover() {
-    const map = window.map;
-    if (!map) return;
-  
-    if (!npriDyn) {
-      npriDyn = L.esri.dynamicMapLayer({
-        url: NPRI_REST_URL,
-        layers: NPRI_LAYERS,
-        opacity: 1
-      }).addTo(map);
-    }
-  
-    if (!npriTip) {
-      npriTip = L.tooltip({
-        sticky: true,
-        direction: 'top',
-        offset: [0, -6],
-        className: 'npri-label'
-      });
-    }
-  
-    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-    }[m]));
-  
-    let tId = null;
-    npriIdentifyHandler = (e) => {
-      if (tId) clearTimeout(tId);
-      tId = setTimeout(() => {
-        L.esri.identifyFeatures({ url: NPRI_REST_URL })
-          .on(map)
-          .at(e.latlng)
-          .layers('visible:' + NPRI_LAYERS.join(','))
-          .tolerance(8)
-          .returnGeometry(false)
-          .run((err, fc) => {
-            if (err) { if (npriTip?._map) map.removeLayer(npriTip); return; }
-            const f = fc?.features?.[0];
-            if (!f) { if (npriTip?._map) map.removeLayer(npriTip); return; }
-          
-            const p = f.properties || {};
-          
-            // helper to pick a field by regex pattern (case-insensitive)
-            const get = (obj, patterns) => {
-              const keys = Object.keys(obj || {});
-              for (const pat of patterns) {
-                const re = new RegExp(pat, 'i');
-                const k = keys.find(key => re.test(key));
-                if (k) return obj[k];
-              }
-              return '';
-            };
-          
-            const reportingYr = get(p, ['^report', 'reporting.?year', '\\byear\\b']);
-            const npriId      = get(p, ['^npri', 'npri.?id', 'npri.?number']);
-            const company     = get(p, ['company', 'owner', 'operator']);
-            const facility    = get(p, ['facility', '^name$']);
-            const sector      = get(p, ['sector']);
-          
-            let html = '';
-            if (reportingYr) html += `<div><b>Reporting year:</b> ${esc(reportingYr)}</div>`;
-            if (npriId)      html += `<div><b>NPRI ID:</b> ${esc(npriId)}</div>`;
-            if (company)     html += `<div><b>Company:</b> ${esc(company)}</div>`;
-            if (facility)    html += `<div><b>Facility:</b> ${esc(facility)}</div>`;
-            if (sector)      html += `<div><b>Sector:</b> ${esc(sector)}</div>`;
-          
-            npriTip.setContent(html || '<b>NPRI Facility</b>');
-            npriTip.setLatLng(e.latlng);
-            if (!npriTip._map) npriTip.addTo(map);
-          }); 
-      }, 120);
-    };
-  
-    map.on('mousemove', npriIdentifyHandler);
-  }
-  
-  function stopNpriHover() {
-    const map = window.map;
-    if (map && npriIdentifyHandler) map.off('mousemove', npriIdentifyHandler);
-    npriIdentifyHandler = null;
-    if (npriTip && npriTip._map) map.removeLayer(npriTip);
-    npriTip = null;
-    if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
-  }
-  
-  // single checkbox wiring (HTML id="toggleNPRIwms")
-  document.getElementById("toggleNPRIwms").addEventListener("change", e => {
-    if (e.target.checked) {
-      map.addLayer(npriLayerGroup);
-    } else {
-      map.removeLayer(npriLayerGroup);
-    }
-  });
-
-
-
-  
-    // hover; switch to 'click' if you prefer quieter identify
-    map.on('mousemove', npriIdentifyHandler);
-  
-  
-  function stopNpri() {
-    const map = window.map;
-    if (npriIdentifyHandler && map) map.off('mousemove', npriIdentifyHandler);
-    npriIdentifyHandler = null;
-    if (npriTip && npriTip._map) map.removeLayer(npriTip);
-    npriTip = null;
-    if (npriDyn && map) { map.removeLayer(npriDyn); npriDyn = null; }
-  }
   
 
   
@@ -1556,6 +1430,14 @@ window.addEventListener('DOMContentLoaded', () => {
       URL.revokeObjectURL(a.href);
     }
 
+
+  document.getElementById("toggleNPRI").addEventListener("change", e => {
+    if (e.target.checked) {
+      map.addLayer(npriLayerGroup);
+    } else {
+      map.removeLayer(npriLayerGroup);
+    }
+  });
 
   
   // Wire up the button
