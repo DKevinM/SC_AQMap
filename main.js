@@ -1446,6 +1446,19 @@ window.addEventListener('DOMContentLoaded', () => {
   // Wire up the button
   document.getElementById('btnExportMCDA')?.addEventListener('click', exportTop10CSV);
 
+  // NPRI toggle
+  const toggleNPRI = document.getElementById("toggleNPRI");
+  
+  toggleNPRI.addEventListener("change", () => {
+    if (!npriLayer) return;
+  
+    if (toggleNPRI.checked) {
+      map.addLayer(npriLayer);
+    } else {
+      map.removeLayer(npriLayer);
+    }
+  });
+  
   
   // PurpleAir toggle
   ui.togglePA.addEventListener('change', async (e) => {
