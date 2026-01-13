@@ -1,5 +1,7 @@
-let npriLayerGroup = null;
-let npriData = null;
+var toggleNPRI;
+var npriData;
+var npriLayerGroup;
+
 
 /* ------------------------- CONFIG / LAYERS ------------------------- */
 const URLS = {
@@ -21,6 +23,19 @@ const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data
   
 /* --------------------------- START APP ---------------------------- */
 window.addEventListener('DOMContentLoaded', () => {
+  toggleNPRI = document.getElementById("toggleNPRI");
+  npriLayerGroup = L.layerGroup();
+
+  
+  toggleNPRI.addEventListener("change", () => {
+    if (toggleNPRI.checked) {
+      map.addLayer(npriLayerGroup);
+    } else {
+      map.removeLayer(npriLayerGroup);
+    }
+  });
+
+  
   /* -------- MAP (create ONCE) -------- */
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   window.map = map; // expose the Leaflet map to other scripts
@@ -485,8 +500,6 @@ window.addEventListener('DOMContentLoaded', () => {
     ui.status.innerHTML = '<span class="muted">Cleared results.</span>';
   }
 
-
-  let npriData = null;
   
 
   function getNearestNPRI(pt) {
@@ -1446,9 +1459,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Wire up the button
   document.getElementById('btnExportMCDA')?.addEventListener('click', exportTop10CSV);
 
-  // NPRI toggle
-  const toggleNPRI = document.getElementById("toggleNPRI");
-  
+  // NPRI toggle 
   toggleNPRI.addEventListener("change", () => {
     if (!npriLayer) return;
   
