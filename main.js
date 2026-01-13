@@ -15,7 +15,7 @@ const URLS = {
   pemu:  'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Priority_Environment_Management_Units/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
   land: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
-const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/ACA_PM25_map.json' };
+const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AB_PM25_map.json' };
 const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
 
 
