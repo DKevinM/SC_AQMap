@@ -16,7 +16,30 @@ const URLS = {
   land: 'https://services.arcgis.com/B7ZrK1Hv4P1dsm9R/arcgis/rest/services/Land_Use_Bylaw/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
 };
 const LAYER_URLS = { purpleair: 'https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AB_PM25_map.json' };
-const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
+
+// Was reading a static export from a repo (NextGen_dk) that no longer
+// exists (404) - this layer has been fully dead, not just stale. Now
+// pulls live from ECCC's own NPRI ArcGIS service instead, same fix as
+// AB_winds/current_trajectory.html. Paginated since the server caps
+// ~2000 records/request; confirmed 3266 current AB facilities.
+const NPRI_BASE = "https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0/query";
+async function fetchNpriLive() {
+  const fields = "FacilityName,CompanyName,ProvinceCode,ReportYear,NpriID,SectorDescriptionEn,City";
+  let allFeatures = [];
+  let offset = 0;
+  const pageSize = 2000;
+  while (true) {
+    const url = `${NPRI_BASE}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
+    const res = await fetch(url);
+    if (!res.ok) { console.error("NPRI live fetch failed:", res.status); break; }
+    const page = await res.json();
+    const feats = page.features || [];
+    allFeatures = allFeatures.concat(feats);
+    if (feats.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { type: "FeatureCollection", features: allFeatures };
+}
 
 
   
@@ -40,12 +63,11 @@ window.addEventListener('DOMContentLoaded', () => {
   const map = L.map('map', { zoomControl:true }).setView([53.53, -113.30], 12);
   window.map = map; // expose the Leaflet map to other scripts
   // ---------- NPRI POINT LAYER ----------
-  fetch(NPRI_URL)
-    .then(res => res.json())
+  fetchNpriLive()
     .then(geo => {
-  
+
       npriData = geo;
-  
+
       const npriGeoLayer = L.geoJSON(geo, {
         pointToLayer: (f, latlng) => L.circleMarker(latlng, {
           radius: 6,
@@ -57,8 +79,8 @@ window.addEventListener('DOMContentLoaded', () => {
         onEachFeature: (f, layer) => {
           const p = f.properties || {};
           layer.bindTooltip(
-            `<b>${p.FACILITY_NAME || "Facility"}</b><br>
-             ${p.COMPANY_NAME || "Company"}<br>
+            `<b>${p.FacilityName || p.FACILITY_NAME || "Facility"}</b><br>
+             ${p.CompanyName || p.COMPANY_NAME || "Company"}<br>
              ${p.SectorDescriptionEn || "Sector"}`,
             { className: "npri-label", direction: "top" }
           );
